@@ -249,16 +249,32 @@ async def list_campaigns(
     client = build_google_ads_client(user)
     service = GoogleAdsService(client)
 
-    customer_id = request.query_params.get("customer_id") or user.login_customer_id
+    customers = (
+        session.execute(
+            select(GoogleAdsCustomer).where(GoogleAdsCustomer.user_id == user.id)
+        )
+        .scalars()
+        .all()
+    )
+
+    requested_customer = request.query_params.get("customer_id")
+    customer_id = requested_customer or user.login_customer_id
+    if not customer_id and customers:
+        customer_id = customers[0].customer_id
+
     if not customer_id:
         raise HTTPException(status_code=400, detail="No customer ID selected")
 
+    valid_customer_ids = {customer.customer_id for customer in customers}
+    if customer_id not in valid_customer_ids:
+        raise HTTPException(status_code=404, detail="Unknown customer ID")
+
+    if user.login_customer_id != customer_id:
+        user.login_customer_id = customer_id
+        session.add(user)
+
     campaigns = service.list_campaigns(customer_id)
     persist_campaigns(session, user, customer_id, campaigns)
-
-    customers = session.execute(
-        select(GoogleAdsCustomer).where(GoogleAdsCustomer.user_id == user.id)
-    ).scalars().all()
 
     context = {
         "request": request,
