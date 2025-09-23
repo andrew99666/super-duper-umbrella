@@ -33,6 +33,23 @@ class CampaignSummary:
 
 
 @dataclass
+
+class CustomerClientSummary:
+    """Lightweight representation of a child customer relationship."""
+
+    resource_name: str
+    id: str
+    descriptive_name: str | None
+    currency_code: str | None
+    time_zone: str | None
+    level: int | None
+    manager: bool
+    status: str | None
+    hidden: bool | None = None
+
+
+@dataclass
+
 class SearchTermRow:
     campaign_id: str
     campaign_name: str
@@ -245,6 +262,66 @@ class GoogleAdsService:
         return campaigns
 
     @_google_ads_retry()
+
+    def list_customer_clients(self, customer_id: str) -> list[CustomerClientSummary]:
+        """Return the customer clients under the specified manager customer."""
+
+        ga_service = self.client.get_service("GoogleAdsService")
+        query = (
+            "SELECT "
+            "customer_client.client_customer, "
+            "customer_client.descriptive_name, "
+            "customer_client.currency_code, "
+            "customer_client.time_zone, "
+            "customer_client.level, "
+            "customer_client.manager, "
+            "customer_client.status, "
+            "customer_client.hidden "
+            "FROM customer_client "
+            "WHERE customer_client.status != 'INACTIVE'"
+        )
+
+        clients: list[CustomerClientSummary] = []
+        try:
+            response = ga_service.search(customer_id=customer_id, query=query)
+        except GoogleAdsException as exc:  # pragma: no cover - thin wrapper
+            logger.exception("Failed to list customer clients: %s", exc)
+            raise
+
+        for row in response:
+            client = row.customer_client
+            hidden = bool(getattr(client, "hidden", False))
+            level_value = getattr(client, "level", 0)
+            try:
+                level = int(level_value) if level_value is not None else 0
+            except (TypeError, ValueError):  # pragma: no cover - defensive
+                level = 0
+            if hidden or level == 0:
+                # Skip the manager itself (level 0) and hidden accounts.
+                continue
+
+            resource_name = str(getattr(client, "client_customer", ""))
+            if not resource_name:
+                continue
+
+            clients.append(
+                CustomerClientSummary(
+                    resource_name=resource_name,
+                    id=resource_name.split("/")[-1],
+                    descriptive_name=getattr(client, "descriptive_name", None),
+                    currency_code=getattr(client, "currency_code", None),
+                    time_zone=getattr(client, "time_zone", None),
+                    level=level,
+                    manager=bool(getattr(client, "manager", False)),
+                    status=str(getattr(client, "status", None)) if getattr(client, "status", None) else None,
+                    hidden=hidden,
+                )
+            )
+
+        return clients
+
+    @_google_ads_retry()
+
     def fetch_search_terms(
         self,
         customer_id: str,

@@ -7,7 +7,11 @@ import hashlib
 import io
 import logging
 import os
+
+from collections import defaultdict, deque
+
 from collections import defaultdict
+
 from typing import Dict, Iterable, List
 from uuid import uuid4
 
@@ -24,6 +28,8 @@ from .google_ads_client import (
     GoogleAdsService,
     LandingPageRow,
     SearchTermRow,
+    CustomerClientSummary,
+
     build_google_ads_client,
     build_oauth_flow,
     campaigns_to_dict,
@@ -149,11 +155,58 @@ def oauth_callback(request: Request, session: Session = Depends(get_session)) ->
 
 
 def sync_customers(session: Session, user: User, service: GoogleAdsService) -> None:
+
+    accessible = service.list_accessible_customers()
+    default_login_id = os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+
+    # Ensure we prefer the configured login customer ID if provided.
+    if not accessible and default_login_id and not user.login_customer_id:
+        user.login_customer_id = default_login_id
+        session.add(user)
+        return
+
+    metadata: dict[str, CustomerClientSummary] = {}
+    queue: deque[str] = deque()
+    for entry in accessible:
+        resource_name = entry.get("resource_name")
+        if resource_name:
+            queue.append(resource_name)
+
+    if not queue:
+        return
+
+    seen_ids: set[str] = set()
+    manager_candidates: list[str] = []
+
+    while queue:
+        resource_name = queue.popleft()
+        customer_id = resource_name.split("/")[-1]
+        if customer_id in seen_ids:
+            continue
+        seen_ids.add(customer_id)
+
+        summary = metadata.get(resource_name)
+        descriptive_name = summary.descriptive_name if summary else None
+        currency_code = summary.currency_code if summary else None
+        time_zone = summary.time_zone if summary else None
+        is_manager = summary.manager if summary else False
+
+        try:
+            customer_data = service.get_customer(resource_name)
+            descriptive_name = getattr(customer_data, "descriptive_name", descriptive_name)
+            currency_code = getattr(customer_data, "currency_code", currency_code)
+            time_zone = getattr(customer_data, "time_zone", time_zone)
+            is_manager = bool(getattr(customer_data, "manager", is_manager))
+        except Exception as exc:  # pragma: no cover - network error fallback
+            logger.debug("Failed to hydrate customer %s: %s", resource_name, exc)
+
+
     customers = service.list_accessible_customers()
     default_login_id = os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
     for entry in customers:
         resource_name = entry["resource_name"]
         customer_id = resource_name.split("/")[-1]
+
         existing = session.execute(
             select(GoogleAdsCustomer).where(GoogleAdsCustomer.resource_name == resource_name)
         ).scalar_one_or_none()
@@ -165,6 +218,40 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
                 resource_name=resource_name,
                 customer_id=customer_id,
             )
+
+
+        customer.descriptive_name = descriptive_name
+        customer.currency_code = currency_code
+        customer.time_zone = time_zone
+        session.add(customer)
+
+        if is_manager and customer_id not in manager_candidates:
+            manager_candidates.append(customer_id)
+
+        try:
+            child_customers = service.list_customer_clients(customer_id)
+        except Exception as exc:  # pragma: no cover - network error fallback
+            logger.debug("Failed to list child customers for %s: %s", customer_id, exc)
+            child_customers = []
+
+        for child in child_customers:
+            if child.id in seen_ids:
+                continue
+            metadata.setdefault(child.resource_name, child)
+            queue.append(child.resource_name)
+            if child.manager and child.id not in manager_candidates:
+                manager_candidates.append(child.id)
+
+    if not user.login_customer_id:
+        if default_login_id:
+            user.login_customer_id = default_login_id
+        elif manager_candidates:
+            user.login_customer_id = manager_candidates[0]
+        elif accessible:
+            first = accessible[0].get("resource_name")
+            if first:
+                user.login_customer_id = first.split("/")[-1]
+
         try:
             customer_data = service.get_customer(resource_name)
             customer.descriptive_name = getattr(customer_data, "descriptive_name", None)
@@ -176,6 +263,7 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
 
     if not user.login_customer_id:
         user.login_customer_id = default_login_id or (customers[0]["resource_name"].split("/")[-1] if customers else None)
+
         session.add(user)
 
 
@@ -188,6 +276,42 @@ async def list_campaigns(
     client = build_google_ads_client(user)
     service = GoogleAdsService(client)
 
+
+    customers = (
+        session.execute(
+            select(GoogleAdsCustomer).where(GoogleAdsCustomer.user_id == user.id)
+        )
+        .scalars()
+        .all()
+    )
+
+    requested_customer = request.query_params.get("customer_id")
+    customer_id = requested_customer or user.login_customer_id
+    if not customer_id and customers:
+        customer_id = customers[0].customer_id
+
+    if not customer_id:
+        raise HTTPException(status_code=400, detail="No customer ID selected")
+
+    valid_customer_ids = {customer.customer_id for customer in customers}
+    if customer_id not in valid_customer_ids:
+        raise HTTPException(status_code=404, detail="Unknown customer ID")
+
+    if user.login_customer_id != customer_id:
+        user.login_customer_id = customer_id
+        session.add(user)
+
+    campaigns = service.list_campaigns(customer_id)
+    persist_campaigns(session, user, customer_id, campaigns)
+
+    customers = (
+        session.execute(
+            select(GoogleAdsCustomer).where(GoogleAdsCustomer.user_id == user.id)
+        )
+        .scalars()
+        .all()
+    )
+
     customer_id = request.query_params.get("customer_id") or user.login_customer_id
     if not customer_id:
         raise HTTPException(status_code=400, detail="No customer ID selected")
@@ -198,6 +322,7 @@ async def list_campaigns(
     customers = session.execute(
         select(GoogleAdsCustomer).where(GoogleAdsCustomer.user_id == user.id)
     ).scalars().all()
+
 
     context = {
         "request": request,
