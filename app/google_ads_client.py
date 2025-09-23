@@ -33,6 +33,7 @@ class CampaignSummary:
 
 
 @dataclass
+
 class CustomerClientSummary:
     """Lightweight representation of a child customer relationship."""
 
@@ -48,6 +49,7 @@ class CustomerClientSummary:
 
 
 @dataclass
+
 class SearchTermRow:
     campaign_id: str
     campaign_name: str
@@ -260,6 +262,7 @@ class GoogleAdsService:
         return campaigns
 
     @_google_ads_retry()
+
     def list_customer_clients(self, customer_id: str) -> list[CustomerClientSummary]:
         """Return the customer clients under the specified manager customer."""
 
@@ -318,6 +321,7 @@ class GoogleAdsService:
         return clients
 
     @_google_ads_retry()
+
     def fetch_search_terms(
         self,
         customer_id: str,
