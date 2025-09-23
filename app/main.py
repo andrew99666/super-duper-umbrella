@@ -8,9 +8,11 @@ import io
 import logging
 import os
 
+
 from collections import defaultdict, deque
 
 from collections import defaultdict
+
 
 from typing import Dict, Iterable, List
 from uuid import uuid4
@@ -206,7 +208,6 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
     for entry in customers:
         resource_name = entry["resource_name"]
         customer_id = resource_name.split("/")[-1]
-
         existing = session.execute(
             select(GoogleAdsCustomer).where(GoogleAdsCustomer.resource_name == resource_name)
         ).scalar_one_or_none()
@@ -276,7 +277,6 @@ async def list_campaigns(
     client = build_google_ads_client(user)
     service = GoogleAdsService(client)
 
-
     customers = (
         session.execute(
             select(GoogleAdsCustomer).where(GoogleAdsCustomer.user_id == user.id)
@@ -312,6 +312,7 @@ async def list_campaigns(
         .all()
     )
 
+
     customer_id = request.query_params.get("customer_id") or user.login_customer_id
     if not customer_id:
         raise HTTPException(status_code=400, detail="No customer ID selected")
@@ -322,6 +323,7 @@ async def list_campaigns(
     customers = session.execute(
         select(GoogleAdsCustomer).where(GoogleAdsCustomer.user_id == user.id)
     ).scalars().all()
+
 
 
     context = {
