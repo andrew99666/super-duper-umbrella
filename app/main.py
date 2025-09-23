@@ -276,6 +276,14 @@ async def list_campaigns(
     campaigns = service.list_campaigns(customer_id)
     persist_campaigns(session, user, customer_id, campaigns)
 
+    customers = (
+        session.execute(
+            select(GoogleAdsCustomer).where(GoogleAdsCustomer.user_id == user.id)
+        )
+        .scalars()
+        .all()
+    )
+
     context = {
         "request": request,
         "campaigns": campaigns_to_dict(campaigns),
