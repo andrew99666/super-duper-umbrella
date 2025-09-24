@@ -59,6 +59,7 @@ using a key derived from `APP_SECRET_KEY`.
 
 ```bash
 # Build the container and start the stack (FastAPI + SQLite volume)
+
 docker compose up --build
 ```
 
