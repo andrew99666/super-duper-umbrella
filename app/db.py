@@ -3,46 +3,22 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
-from pathlib import Path
-from typing import Any, Generator
+
+from typing import Generator
 
 from sqlalchemy import create_engine
-from sqlalchemy.engine import make_url
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
+
 
 
 class Base(DeclarativeBase):
     """Base declarative class for SQLAlchemy models."""
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/app.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 
-url = make_url(DATABASE_URL)
-connect_args: dict[str, Any] = {}
-if url.drivername.startswith("sqlite"):
-    connect_args["check_same_thread"] = False
-    database_path = url.database
-    if database_path and database_path != ":memory:":
-        # Normalise file URIs and ensure the directory exists before connecting.
-        if database_path.startswith("file:"):
-            database_path = database_path.replace("file:", "", 1)
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
-        resolved_path = Path(database_path)
-        if not resolved_path.is_absolute():
-            project_root = Path(__file__).resolve().parent.parent
-            resolved_path = (project_root / resolved_path).resolve(strict=False)
-        else:
-            resolved_path = resolved_path.expanduser().resolve(strict=False)
-
-        os.makedirs(resolved_path.parent, exist_ok=True)
-        path_str = resolved_path.as_posix()
-        if DATABASE_URL.startswith("sqlite+pysqlite"):
-            DATABASE_URL = f"sqlite+pysqlite:///{path_str}"
-        else:
-            DATABASE_URL = f"sqlite:///{path_str}"
-
-        # Recompute the URL so the engine sees the absolute path.
-        url = make_url(DATABASE_URL)
 
 engine = create_engine(DATABASE_URL, connect_args=connect_args, future=True)
 
