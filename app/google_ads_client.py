@@ -10,6 +10,9 @@ from urllib.parse import urljoin
 
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
+
+from google.api_core.exceptions import MethodNotImplemented
+
 from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -74,6 +77,17 @@ class GoogleAdsOAuthError(RuntimeError):
     """Raised when OAuth flow cannot be completed."""
 
 
+
+def _raise_api_version_error(exc: Exception) -> None:
+    message = (
+        "Google Ads API request failed because the client library is targeting a retired API version. "
+        "Upgrade the installed `google-ads` dependency and rebuild the container, or set "
+        "GOOGLE_ADS_API_VERSION to a supported release."
+    )
+    raise GoogleAdsOAuthError(message) from exc
+
+
+
 def build_oauth_flow(base_url: str, state: str | None = None) -> Flow:
     """Create an OAuth flow for the Google Ads API."""
     client_id = os.getenv("GOOGLE_ADS_OAUTH_CLIENT_ID")
@@ -130,7 +144,16 @@ def build_google_ads_client(user: User) -> GoogleAdsClient:
     if login_customer_id:
         config["login_customer_id"] = login_customer_id
 
-    client = GoogleAdsClient.load_from_dict(config)
+
+    api_version = os.getenv("GOOGLE_ADS_API_VERSION", "").strip() or None
+    try:
+        if api_version:
+            client = GoogleAdsClient.load_from_dict(config, version=api_version)
+        else:
+            client = GoogleAdsClient.load_from_dict(config)
+    except MethodNotImplemented as exc:  # pragma: no cover - dependent on client internals
+        _raise_api_version_error(exc)
+
     return client
 
 
@@ -224,7 +247,13 @@ class GoogleAdsService:
     @_google_ads_retry()
     def list_accessible_customers(self) -> list[dict[str, str | None]]:
         customer_service = self.client.get_service("CustomerService")
-        resource_names = customer_service.list_accessible_customers().resource_names
+
+        try:
+            response = customer_service.list_accessible_customers()
+        except MethodNotImplemented as exc:  # pragma: no cover - network version error
+            _raise_api_version_error(exc)
+        resource_names = response.resource_names
+
         result = []
         for resource_name in resource_names:
             result.append({"resource_name": resource_name})
@@ -233,7 +262,12 @@ class GoogleAdsService:
     @_google_ads_retry()
     def get_customer(self, resource_name: str):
         customer_service = self.client.get_service("CustomerService")
-        return customer_service.get_customer(resource_name=resource_name)
+
+        try:
+            return customer_service.get_customer(resource_name=resource_name)
+        except MethodNotImplemented as exc:  # pragma: no cover - network version error
+            _raise_api_version_error(exc)
+
 
     @_google_ads_retry()
     def list_campaigns(self, customer_id: str) -> list[CampaignSummary]:
@@ -256,6 +290,10 @@ class GoogleAdsService:
                         advertising_channel_type=str(campaign.advertising_channel_type),
                     )
                 )
+
+        except MethodNotImplemented as exc:  # pragma: no cover - network version error
+            _raise_api_version_error(exc)
+
         except GoogleAdsException as exc:  # pragma: no cover - thin wrapper
             logger.exception("Failed to list campaigns: %s", exc)
             raise
@@ -284,6 +322,10 @@ class GoogleAdsService:
         clients: list[CustomerClientSummary] = []
         try:
             response = ga_service.search(customer_id=customer_id, query=query)
+
+        except MethodNotImplemented as exc:  # pragma: no cover - network version error
+            _raise_api_version_error(exc)
+
         except GoogleAdsException as exc:  # pragma: no cover - thin wrapper
             logger.exception("Failed to list customer clients: %s", exc)
             raise
@@ -347,6 +389,10 @@ class GoogleAdsService:
                         cost_micros=row.metrics.cost_micros,
                         conversions=row.metrics.conversions,
                     )
+
+        except MethodNotImplemented as exc:  # pragma: no cover - network version error
+            _raise_api_version_error(exc)
+
         except GoogleAdsException as exc:
             if "campaign_search_term_view" in str(exc):
                 logger.warning("Falling back to search_term_view due to API error: %s", exc)
@@ -366,7 +412,12 @@ class GoogleAdsService:
     ) -> Iterator[SearchTermRow]:
         ga_service = self.client.get_service("GoogleAdsService")
         query = build_search_term_fallback_query(campaign_ids, start_date, end_date)
-        results = ga_service.search_stream(customer_id=customer_id, query=query)
+
+        try:
+            results = ga_service.search_stream(customer_id=customer_id, query=query)
+        except MethodNotImplemented as exc:  # pragma: no cover - network version error
+            _raise_api_version_error(exc)
+
         for batch in results:
             for row in batch.results:
                 yield SearchTermRow(
@@ -389,7 +440,12 @@ class GoogleAdsService:
         ga_service = self.client.get_service("GoogleAdsService")
         ad_query = build_landing_page_query(campaign_ids)
         urls_by_campaign: dict[str, set[str]] = {}
-        response = ga_service.search_stream(customer_id=customer_id, query=ad_query)
+
+        try:
+            response = ga_service.search_stream(customer_id=customer_id, query=ad_query)
+        except MethodNotImplemented as exc:  # pragma: no cover - network version error
+            _raise_api_version_error(exc)
+
         for batch in response:
             for row in batch.results:
                 campaign_id = str(row.campaign.id)
@@ -401,7 +457,12 @@ class GoogleAdsService:
                     urls_by_campaign[campaign_id].add(str(url))
 
         lp_query = build_landing_page_view_query(campaign_ids)
-        response = ga_service.search_stream(customer_id=customer_id, query=lp_query)
+
+        try:
+            response = ga_service.search_stream(customer_id=customer_id, query=lp_query)
+        except MethodNotImplemented as exc:  # pragma: no cover - network version error
+            _raise_api_version_error(exc)
+
         for batch in response:
             for row in batch.results:
                 campaign_id = str(row.campaign.id) if hasattr(row, "campaign") else None

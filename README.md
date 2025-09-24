@@ -41,16 +41,19 @@ Copy `.env.example` to `.env` and populate the following:
 ```env
 APP_SECRET_KEY=replace-with-a-long-random-string
 BASE_URL=http://localhost:8000
-
 DATABASE_URL=sqlite:///./data/app.db
-
 GOOGLE_ADS_DEVELOPER_TOKEN=your_dev_token
 GOOGLE_ADS_OAUTH_CLIENT_ID=your_oauth_client_id
 GOOGLE_ADS_OAUTH_CLIENT_SECRET=your_oauth_client_secret
+GOOGLE_ADS_API_VERSION=
 GOOGLE_ADS_LOGIN_CUSTOMER_ID=optional_manager_id
 OPENAI_API_KEY=sk-...
 FEATURE_APPLY_NEGATIVES=false
 ```
+
+
+Leave `GOOGLE_ADS_API_VERSION` empty to use the latest version supported by the installed `google-ads` library.
+Only set it (for example, `v21`) if Google retires the default and you need to pin to a specific release.
 
 All sensitive values are read from environment variables at runtime. Refresh tokens are encrypted at rest
 using a key derived from `APP_SECRET_KEY`.
@@ -104,7 +107,10 @@ pytest
 
 - `campaign_search_term_view` is used whenever available to include Performance Max search terms. The code
   automatically retries with `search_term_view` if the preferred view is not supported in the target API
-  version.
+
+  version. If Google sunsets an API version, bump the `google-ads` dependency (or set `GOOGLE_ADS_API_VERSION`
+  to a currently supported release) and rebuild the Docker image.
+
 - Landing-page URLs are sourced from both `ad_group_ad.ad.final_urls` and `landing_page_view` to capture
   expanded final URLs. Duplicate URLs are cached and summaries refreshed on a rolling basis.
 - OpenAI calls use conservative temperature settings (≤0.2), exponential back-off, and strict schema
