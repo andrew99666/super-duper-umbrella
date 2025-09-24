@@ -1,6 +1,5 @@
 """FastAPI application entrypoint."""
 from __future__ import annotations
-
 import csv
 import datetime as dt
 import hashlib
@@ -10,14 +9,12 @@ import os
 from collections import defaultdict, deque
 from typing import Dict, Iterable, List
 from uuid import uuid4
-
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
-
 from .db import get_session, init_db
 from .google_ads_client import (
     GoogleAdsOAuthError,
@@ -148,6 +145,7 @@ def oauth_callback(request: Request, session: Session = Depends(get_session)) ->
         logger.exception("Failed to sync Google Ads accounts: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+
     request.session["user_id"] = user.id
     request.session.pop("oauth_state", None)
     request.session.pop("code_verifier", None)
@@ -242,6 +240,7 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
             first = accessible[0].get("resource_name")
             if first:
                 user.login_customer_id = first.split("/")[-1]
+
         session.add(user)
 
 

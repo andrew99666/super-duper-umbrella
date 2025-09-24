@@ -51,6 +51,7 @@ OPENAI_API_KEY=sk-...
 FEATURE_APPLY_NEGATIVES=false
 ```
 
+
 Leave `GOOGLE_ADS_API_VERSION` empty to use the latest version supported by the installed `google-ads` library.
 Only set it (for example, `v21`) if Google retires the default and you need to pin to a specific release.
 
@@ -61,8 +62,10 @@ using a key derived from `APP_SECRET_KEY`.
 
 ```bash
 # Build the container and start the stack (FastAPI + SQLite volume)
+
 # (Optional) Ensure the data directory exists so SQLite can create the database file
 mkdir -p data  # use `mkdir data` on Windows PowerShell
+
 docker compose up --build
 ```
 
@@ -88,7 +91,9 @@ inside the container. File changes in `app/` are mounted into the container for 
 
 - Python version: **3.11**
 - Frameworks: FastAPI, SQLAlchemy, HTMX, Tailwind CSS via CDN
+
 - Database: SQLite (file-backed, persisted to `data/app.db` by default)
+
 - Tests: run with `pytest`
 
 ```bash
@@ -102,8 +107,10 @@ pytest
 
 - `campaign_search_term_view` is used whenever available to include Performance Max search terms. The code
   automatically retries with `search_term_view` if the preferred view is not supported in the target API
+
   version. If Google sunsets an API version, bump the `google-ads` dependency (or set `GOOGLE_ADS_API_VERSION`
   to a currently supported release) and rebuild the Docker image.
+
 - Landing-page URLs are sourced from both `ad_group_ad.ad.final_urls` and `landing_page_view` to capture
   expanded final URLs. Duplicate URLs are cached and summaries refreshed on a rolling basis.
 - OpenAI calls use conservative temperature settings (≤0.2), exponential back-off, and strict schema

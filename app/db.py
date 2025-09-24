@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
+
 from pathlib import Path
 from typing import Any, Generator
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
 
 
 class Base(DeclarativeBase):
@@ -43,6 +45,7 @@ if url.drivername.startswith("sqlite"):
 
         # Recompute the URL so the engine sees the absolute path.
         url = make_url(DATABASE_URL)
+
 
 engine = create_engine(DATABASE_URL, connect_args=connect_args, future=True)
 
