@@ -1,0 +1,123 @@
+{% if error_message %}
+<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+  {{ error_message }}
+</div>
+{% endif %}
+{% if suggestions %}
+<div class="bg-white shadow-sm rounded-lg p-6">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h2 class="text-xl font-semibold text-slate-800">LLM suggestions</h2>
+      <p class="text-sm text-slate-500">
+        Review the recommendations, adjust selections, and export as CSV or apply via the API.
+      </p>
+    </div>
+    <div class="flex items-center gap-3">
+      <button
+        type="button"
+        id="select-high-confidence"
+        class="px-3 py-1.5 border border-blue-200 text-blue-600 rounded-md text-sm"
+      >
+        Select irrelevants ≥ 0.8
+      </button>
+      <a
+        href="/export"
+        class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm"
+        >Export CSV</a
+      >
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-3 py-2 text-left font-semibold text-slate-600">Approve</th>
+          <th class="px-3 py-2 text-left font-semibold text-slate-600">Search term</th>
+          <th class="px-3 py-2 text-left font-semibold text-slate-600">Metrics</th>
+          <th class="px-3 py-2 text-left font-semibold text-slate-600">Relevancy</th>
+          <th class="px-3 py-2 text-left font-semibold text-slate-600">Reason</th>
+          <th class="px-3 py-2 text-left font-semibold text-slate-600">Match type</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100" id="suggestion-table-body">
+        {% for suggestion in suggestions %}
+        {% set analysis = suggestion.analysis %}
+        {% set term = analysis.search_term %}
+        <tr data-confidence="{{ analysis.confidence or 0 }}" data-negative="{{ 'true' if analysis.suggest_negative else 'false' }}">
+          <td class="px-3 py-2">
+            <input
+              type="checkbox"
+              class="h-4 w-4"
+              {% if suggestion.approved %}checked{% endif %}
+              hx-post="/suggestions/{{ suggestion.id }}/toggle"
+              hx-trigger="change"
+              hx-target="closest tr"
+              hx-swap="none"
+            />
+          </td>
+          <td class="px-3 py-2">
+            <div class="font-medium text-slate-700">{{ term.term }}</div>
+            <div class="text-xs text-slate-400">Campaign: {{ analysis.search_term.campaign.name }}</div>
+          </td>
+          <td class="px-3 py-2 text-slate-600">
+            <div>Impr: {{ term.impressions or 0 }}</div>
+            <div>Clicks: {{ term.clicks or 0 }}</div>
+            <div>Conv: {{ '%.2f'|format(term.conversions or 0) }}</div>
+          </td>
+          <td class="px-3 py-2">
+            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium
+              {% if analysis.relevancy_label == 'irrelevant' %}bg-red-100 text-red-700{% elif analysis.relevancy_label == 'possibly_related' %}bg-amber-100 text-amber-700{% else %}bg-emerald-100 text-emerald-700{% endif %}">
+              {{ analysis.relevancy_label.replace('_', ' ') }}
+            </span>
+            <div class="text-xs text-slate-500 mt-1">Confidence: {{ '%.2f'|format((analysis.confidence or 0)) }}</div>
+          </td>
+          <td class="px-3 py-2 text-slate-600">
+            <div>{{ analysis.reason }}</div>
+            {% if suggestion.rationale %}
+            <div class="text-xs text-slate-400 mt-1">{{ suggestion.rationale }}</div>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-slate-600">
+            {{ analysis.suggested_match_type|upper }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="mt-6 flex items-center gap-3">
+    <form method="post" action="/apply-negatives">
+      <button
+        type="submit"
+        class="px-3 py-1.5 border border-slate-300 text-slate-600 rounded-md text-sm"
+      >
+        Apply via API (beta)
+      </button>
+    </form>
+    <p class="text-xs text-slate-400">
+      Applying negatives requires enabling the FEATURE_APPLY_NEGATIVES flag and confirming the scope in code.
+    </p>
+  </div>
+</div>
+{% else %}
+<p class="text-sm text-slate-500">No suggestions generated for the selected campaigns.</p>
+{% endif %}
+
+<script>
+  const bulkButton = document.getElementById("select-high-confidence");
+  if (bulkButton) {
+    bulkButton.addEventListener("click", () => {
+      document.querySelectorAll("#suggestion-table-body tr").forEach((row) => {
+        const negative = row.dataset.negative === "true";
+        const confidence = parseFloat(row.dataset.confidence || "0");
+        if (negative && confidence >= 0.8) {
+          const checkbox = row.querySelector("input[type='checkbox']");
+          if (checkbox && !checkbox.checked) {
+            checkbox.checked = true;
+            checkbox.dispatchEvent(new Event("change"));
+          }
+        }
+      });
+    });
+  }
+</script>
