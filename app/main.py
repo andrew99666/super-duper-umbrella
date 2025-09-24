@@ -7,7 +7,9 @@ import hashlib
 import io
 import logging
 import os
+
 from collections import defaultdict, deque
+
 from typing import Dict, Iterable, List
 from uuid import uuid4
 
@@ -237,6 +239,7 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
             first = accessible[0].get("resource_name")
             if first:
                 user.login_customer_id = first.split("/")[-1]
+
         session.add(user)
 
 
