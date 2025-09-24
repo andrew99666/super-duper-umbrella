@@ -42,7 +42,7 @@ Copy `.env.example` to `.env` and populate the following:
 APP_SECRET_KEY=replace-with-a-long-random-string
 BASE_URL=http://localhost:8000
 
-DATABASE_URL=sqlite:///./app.db
+DATABASE_URL=sqlite:///./data/app.db
 
 GOOGLE_ADS_DEVELOPER_TOKEN=your_dev_token
 GOOGLE_ADS_OAUTH_CLIENT_ID=your_oauth_client_id
@@ -59,6 +59,9 @@ using a key derived from `APP_SECRET_KEY`.
 
 ```bash
 # Build the container and start the stack (FastAPI + SQLite volume)
+
+# (Optional) Ensure the data directory exists so SQLite can create the database file
+mkdir -p data  # use `mkdir data` on Windows PowerShell
 
 docker compose up --build
 ```
@@ -86,7 +89,7 @@ inside the container. File changes in `app/` are mounted into the container for 
 - Python version: **3.11**
 - Frameworks: FastAPI, SQLAlchemy, HTMX, Tailwind CSS via CDN
 
-- Database: SQLite (file-backed, persisted to `app.db` by default)
+- Database: SQLite (file-backed, persisted to `data/app.db` by default)
 
 - Tests: run with `pytest`
 

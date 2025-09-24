@@ -10,8 +10,6 @@ import os
 
 from collections import defaultdict, deque
 
-from collections import defaultdict
-
 from typing import Dict, Iterable, List
 from uuid import uuid4
 
@@ -29,7 +27,6 @@ from .google_ads_client import (
     LandingPageRow,
     SearchTermRow,
     CustomerClientSummary,
-
     build_google_ads_client,
     build_oauth_flow,
     campaigns_to_dict,
@@ -155,7 +152,6 @@ def oauth_callback(request: Request, session: Session = Depends(get_session)) ->
 
 
 def sync_customers(session: Session, user: User, service: GoogleAdsService) -> None:
-
     accessible = service.list_accessible_customers()
     default_login_id = os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
 
@@ -200,12 +196,6 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
         except Exception as exc:  # pragma: no cover - network error fallback
             logger.debug("Failed to hydrate customer %s: %s", resource_name, exc)
 
-    customers = service.list_accessible_customers()
-    default_login_id = os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
-    for entry in customers:
-        resource_name = entry["resource_name"]
-        customer_id = resource_name.split("/")[-1]
-
         existing = session.execute(
             select(GoogleAdsCustomer).where(GoogleAdsCustomer.resource_name == resource_name)
         ).scalar_one_or_none()
@@ -249,20 +239,6 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
             first = accessible[0].get("resource_name")
             if first:
                 user.login_customer_id = first.split("/")[-1]
-
-
-        try:
-            customer_data = service.get_customer(resource_name)
-            customer.descriptive_name = getattr(customer_data, "descriptive_name", None)
-            customer.currency_code = getattr(customer_data, "currency_code", None)
-            customer.time_zone = getattr(customer_data, "time_zone", None)
-        except Exception as exc:  # pragma: no cover - network error fallback
-            logger.debug("Failed to hydrate customer %s: %s", resource_name, exc)
-        session.add(customer)
-
-    if not user.login_customer_id:
-        user.login_customer_id = default_login_id or (customers[0]["resource_name"].split("/")[-1] if customers else None)
-
 
         session.add(user)
 
@@ -310,19 +286,6 @@ async def list_campaigns(
         .scalars()
         .all()
     )
-
-
-
-    customer_id = request.query_params.get("customer_id") or user.login_customer_id
-    if not customer_id:
-        raise HTTPException(status_code=400, detail="No customer ID selected")
-
-    campaigns = service.list_campaigns(customer_id)
-    persist_campaigns(session, user, customer_id, campaigns)
-
-    customers = session.execute(
-        select(GoogleAdsCustomer).where(GoogleAdsCustomer.user_id == user.id)
-    ).scalars().all()
 
     context = {
         "request": request,
