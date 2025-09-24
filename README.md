@@ -51,7 +51,6 @@ OPENAI_API_KEY=sk-...
 FEATURE_APPLY_NEGATIVES=false
 ```
 
-
 Leave `GOOGLE_ADS_API_VERSION` empty to use the latest version supported by the installed `google-ads` library.
 Only set it (for example, `v21`) if Google retires the default and you need to pin to a specific release.
 
@@ -107,7 +106,6 @@ pytest
 
 - `campaign_search_term_view` is used whenever available to include Performance Max search terms. The code
   automatically retries with `search_term_view` if the preferred view is not supported in the target API
-
   version. If Google sunsets an API version, bump the `google-ads` dependency (or set `GOOGLE_ADS_API_VERSION`
   to a currently supported release) and rebuild the Docker image.
 

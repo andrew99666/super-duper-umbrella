@@ -10,9 +10,7 @@ from urllib.parse import urljoin
 
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
-
 from google.api_core.exceptions import MethodNotImplemented
-
 from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -316,7 +314,8 @@ class GoogleAdsService:
             "customer_client.status, "
             "customer_client.hidden "
             "FROM customer_client "
-            "WHERE customer_client.status != 'INACTIVE'"
+            "WHERE customer_client.hidden = FALSE"
+
         )
 
         clients: list[CustomerClientSummary] = []
