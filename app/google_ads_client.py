@@ -241,8 +241,7 @@ def build_landing_page_view_query(campaign_ids: Sequence[str]) -> str:
     return f"""
     SELECT
       campaign.id,
-      landing_page_view.unexpanded_final_url,
-      landing_page_view.display_name
+      landing_page_view.unexpanded_final_url
     FROM landing_page_view
     WHERE campaign.id IN ({id_list})
     """.strip()
