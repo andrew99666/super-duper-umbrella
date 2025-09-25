@@ -13,12 +13,13 @@ from app.models import GoogleAdsCustomer, User
 
 class FakeGoogleAdsService:
     def __init__(self) -> None:
-        self.requests: list[str] = []
+        self.login_headers: list[str | None] = []
 
     def list_accessible_customers(self) -> list[dict[str, str]]:
         return [{"resource_name": "customers/1111111111"}]
 
-    def get_customer(self, resource_name: str):
+    def get_customer(self, resource_name: str, login_customer_id: str | None = None):
+        self.login_headers.append(login_customer_id)
         if resource_name == "customers/1111111111":
             return SimpleNamespace(
                 descriptive_name="Manager Account",
@@ -35,8 +36,11 @@ class FakeGoogleAdsService:
             )
         raise ValueError(f"Unexpected resource name: {resource_name}")
 
-    def list_customer_clients(self, customer_id: str):
+    def list_customer_clients(
+        self, customer_id: str, *, login_customer_id: str | None = None
+    ):
         self.requests.append(customer_id)
+        self.login_headers.append(login_customer_id)
         if customer_id == "1111111111":
             return [
                 CustomerClientSummary(
@@ -87,5 +91,8 @@ def test_sync_customers_persists_manager_and_children(clean_database):
         # Ensure child lookup attempted for both manager and child accounts.
         assert service.requests.count("1111111111") == 1
         assert service.requests.count("2222222222") == 1
+        # Login headers should always be populated once traversal begins.
+        assert service.login_headers[0] in {None, "1111111111"}
+        assert "1111111111" in service.login_headers
     finally:
         session.close()

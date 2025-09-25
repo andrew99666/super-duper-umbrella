@@ -162,11 +162,15 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
         return
 
     metadata: dict[str, CustomerClientSummary] = {}
+    parent_logins: dict[str, str] = {}
     queue: deque[str] = deque()
+    preferred_login = user.login_customer_id or default_login_id
     for entry in accessible:
         resource_name = entry.get("resource_name")
         if resource_name:
             queue.append(resource_name)
+            customer_id = resource_name.split("/")[-1]
+            parent_logins.setdefault(resource_name, preferred_login or customer_id)
 
     if not queue:
         return
@@ -182,13 +186,16 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
         seen_ids.add(customer_id)
 
         summary = metadata.get(resource_name)
+        login_customer_id = parent_logins.get(resource_name)
         descriptive_name = summary.descriptive_name if summary else None
         currency_code = summary.currency_code if summary else None
         time_zone = summary.time_zone if summary else None
         is_manager = summary.manager if summary else False
 
         try:
-            customer_data = service.get_customer(resource_name)
+            customer_data = service.get_customer(
+                resource_name, login_customer_id=login_customer_id
+            )
             descriptive_name = getattr(customer_data, "descriptive_name", descriptive_name)
             currency_code = getattr(customer_data, "currency_code", currency_code)
             time_zone = getattr(customer_data, "time_zone", time_zone)
@@ -217,7 +224,9 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
             manager_candidates.append(customer_id)
 
         try:
-            child_customers = service.list_customer_clients(customer_id)
+            child_customers = service.list_customer_clients(
+                customer_id, login_customer_id=login_customer_id or customer_id
+            )
         except Exception as exc:  # pragma: no cover - network error fallback
             logger.debug("Failed to list child customers for %s: %s", customer_id, exc)
             child_customers = []
@@ -227,6 +236,7 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
                 continue
             metadata.setdefault(child.resource_name, child)
             queue.append(child.resource_name)
+            parent_logins.setdefault(child.resource_name, child.id if child.manager else (login_customer_id or customer_id))
             if child.manager and child.id not in manager_candidates:
                 manager_candidates.append(child.id)
 
@@ -260,7 +270,8 @@ async def list_campaigns(
     )
 
     requested_customer = request.query_params.get("customer_id")
-    customer_id = requested_customer or user.login_customer_id
+    session_selected = request.session.get("selected_customer_id")
+    customer_id = requested_customer or session_selected or user.login_customer_id
     if not customer_id and customers:
         customer_id = customers[0].customer_id
 
@@ -271,11 +282,11 @@ async def list_campaigns(
     if customer_id not in valid_customer_ids:
         raise HTTPException(status_code=404, detail="Unknown customer ID")
 
-    if user.login_customer_id != customer_id:
-        user.login_customer_id = customer_id
-        session.add(user)
+    request.session["selected_customer_id"] = customer_id
 
-    campaigns = service.list_campaigns(customer_id)
+    campaigns = service.list_campaigns(
+        customer_id, login_customer_id=user.login_customer_id or os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+    )
     persist_campaigns(session, user, customer_id, campaigns)
 
     customers = (
@@ -386,9 +397,14 @@ async def analyze(
 
     error_message = None
     try:
+        login_header = user.login_customer_id or os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
         for customer_id, campaigns in campaigns_by_customer.items():
             ga_campaign_ids = [campaign.campaign_id for campaign in campaigns]
-            landing_pages = list(service.fetch_landing_pages(customer_id, ga_campaign_ids))
+            landing_pages = list(
+                service.fetch_landing_pages(
+                    customer_id, ga_campaign_ids, login_customer_id=login_header
+                )
+            )
             for lp in landing_pages:
                 landing_page = get_or_create_landing_page(session, lp)
                 landing_page_map.setdefault(lp.campaign_id or "*", landing_page)
@@ -397,7 +413,13 @@ async def analyze(
                 landing_page_map["*"] = next(iter(landing_page_map.values()))
 
             search_rows = list(
-                service.fetch_search_terms(customer_id, ga_campaign_ids, start, end)
+                service.fetch_search_terms(
+                    customer_id,
+                    ga_campaign_ids,
+                    start,
+                    end,
+                    login_customer_id=login_header,
+                )
             )
             persist_search_terms(session, campaigns, search_rows)
             run_llm_analysis(
