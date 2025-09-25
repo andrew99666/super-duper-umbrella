@@ -13,6 +13,7 @@ from app.models import GoogleAdsCustomer, User
 
 class FakeGoogleAdsService:
     def __init__(self) -> None:
+        self.requests: list[str] = []
         self.login_headers: list[str | None] = []
 
     def list_accessible_customers(self) -> list[dict[str, str]]:

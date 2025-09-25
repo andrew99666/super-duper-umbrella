@@ -61,7 +61,6 @@ using a key derived from `APP_SECRET_KEY`.
 
 ```bash
 # Build the container and start the stack (FastAPI + SQLite volume)
-
 # (Optional) Ensure the data directory exists so SQLite can create the database file
 mkdir -p data  # use `mkdir data` on Windows PowerShell
 docker compose up --build

@@ -34,7 +34,6 @@ class CampaignSummary:
 
 
 @dataclass
-
 class CustomerClientSummary:
     """Lightweight representation of a child customer relationship."""
 
@@ -50,7 +49,6 @@ class CustomerClientSummary:
 
 
 @dataclass
-
 class SearchTermRow:
     campaign_id: str
     campaign_name: str
@@ -75,7 +73,6 @@ class GoogleAdsOAuthError(RuntimeError):
     """Raised when OAuth flow cannot be completed."""
 
 
-
 def _raise_api_version_error(exc: Exception) -> None:
     message = (
         "Google Ads API request failed because the client library is targeting a retired API version. "
@@ -83,7 +80,6 @@ def _raise_api_version_error(exc: Exception) -> None:
         "GOOGLE_ADS_API_VERSION to a supported release."
     )
     raise GoogleAdsOAuthError(message) from exc
-
 
 
 def build_oauth_flow(base_url: str, state: str | None = None) -> Flow:
@@ -142,7 +138,6 @@ def build_google_ads_client(user: User) -> GoogleAdsClient:
     if login_customer_id:
         config["login_customer_id"] = _normalize_customer_id(login_customer_id)
 
-
     api_version = os.getenv("GOOGLE_ADS_API_VERSION", "").strip() or None
     try:
         if api_version:
@@ -151,7 +146,6 @@ def build_google_ads_client(user: User) -> GoogleAdsClient:
             client = GoogleAdsClient.load_from_dict(config)
     except MethodNotImplemented as exc:  # pragma: no cover - dependent on client internals
         _raise_api_version_error(exc)
-
     return client
 
 
@@ -162,7 +156,6 @@ def _google_ads_retry() -> callable:
         wait=wait_exponential(multiplier=2, min=1, max=30),
         retry=retry_if_exception_type((GoogleAdsException, RefreshError)),
     )
-
 
 
 def _normalize_customer_id(customer_id: str | None) -> str | None:
@@ -181,7 +174,6 @@ def _build_login_metadata(login_customer_id: str | None):
 def _metadata_kwargs(login_customer_id: str | None) -> dict[str, object]:
     metadata = _build_login_metadata(login_customer_id)
     return {"metadata": metadata} if metadata else {}
-
 
 
 def build_campaign_search_term_query(
@@ -265,20 +257,17 @@ class GoogleAdsService:
     @_google_ads_retry()
     def list_accessible_customers(self) -> list[dict[str, str | None]]:
         customer_service = self.client.get_service("CustomerService")
-
         try:
             response = customer_service.list_accessible_customers()
         except MethodNotImplemented as exc:  # pragma: no cover - network version error
             _raise_api_version_error(exc)
         resource_names = response.resource_names
-
         result = []
         for resource_name in resource_names:
             result.append({"resource_name": resource_name})
         return result
 
     @_google_ads_retry()
-
     def get_customer(self, resource_name: str, login_customer_id: str | None = None):
         customer_service = self.client.get_service("CustomerService")
         try:
@@ -292,7 +281,6 @@ class GoogleAdsService:
     def list_campaigns(
         self, customer_id: str, *, login_customer_id: str | None = None
     ) -> list[CampaignSummary]:
-
         ga_service = self.client.get_service("GoogleAdsService")
         query = (
             "SELECT campaign.id, campaign.name, campaign.status, "
@@ -305,7 +293,6 @@ class GoogleAdsService:
                 query=query,
                 **_metadata_kwargs(login_customer_id),
             )
-
             for row in response:
                 campaign = row.campaign
                 campaigns.append(
@@ -319,16 +306,15 @@ class GoogleAdsService:
                 )
         except MethodNotImplemented as exc:  # pragma: no cover - network version error
             _raise_api_version_error(exc)
-
         except GoogleAdsException as exc:  # pragma: no cover - thin wrapper
             logger.exception("Failed to list campaigns: %s", exc)
             raise
         return campaigns
 
+    @_google_ads_retry()
     def list_customer_clients(
         self, customer_id: str, *, login_customer_id: str | None = None
     ) -> list[CustomerClientSummary]:
-
         """Return the customer clients under the specified manager customer."""
 
         ga_service = self.client.get_service("GoogleAdsService")
@@ -355,7 +341,6 @@ class GoogleAdsService:
             )
         except MethodNotImplemented as exc:  # pragma: no cover - network version error
             _raise_api_version_error(exc)
-
         except GoogleAdsException as exc:  # pragma: no cover - thin wrapper
             logger.exception("Failed to list customer clients: %s", exc)
             raise
@@ -393,7 +378,6 @@ class GoogleAdsService:
         return clients
 
     @_google_ads_retry()
-
     def fetch_search_terms(
         self,
         customer_id: str,
@@ -402,7 +386,6 @@ class GoogleAdsService:
         end_date: date,
         *,
         login_customer_id: str | None = None,
-
     ) -> Iterator[SearchTermRow]:
         ga_service = self.client.get_service("GoogleAdsService")
         query = build_campaign_search_term_query(campaign_ids, start_date, end_date)
@@ -412,7 +395,6 @@ class GoogleAdsService:
                 query=query,
                 **_metadata_kwargs(login_customer_id),
             )
-
             for batch in results:
                 for row in batch.results:
                     yield SearchTermRow(
@@ -429,7 +411,6 @@ class GoogleAdsService:
                     )
         except MethodNotImplemented as exc:  # pragma: no cover - network version error
             _raise_api_version_error(exc)
-
         except GoogleAdsException as exc:
             if "campaign_search_term_view" in str(exc):
                 logger.warning("Falling back to search_term_view due to API error: %s", exc)
@@ -439,7 +420,6 @@ class GoogleAdsService:
                     start_date,
                     end_date,
                     login_customer_id=login_customer_id,
-
                 )
             else:
                 logger.exception("Failed to fetch search terms: %s", exc)
@@ -508,6 +488,7 @@ class GoogleAdsService:
                 for url in getattr(ad, "final_mobile_urls", []) or []:
                     urls_by_campaign[campaign_id].add(str(url))
 
+        lp_query = build_landing_page_view_query(campaign_ids)
         try:
             response = ga_service.search_stream(
                 customer_id=customer_id,
