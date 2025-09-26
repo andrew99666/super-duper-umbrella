@@ -10,7 +10,7 @@ negatives behind a feature flag).
 - Google OAuth web flow with encrypted refresh-token storage in SQLite
 - Campaign picker with HTMX-powered analysis workflow and Tailwind UI
 - GAQL helpers targeting `campaign_search_term_view` with automatic fallback
-- Landing-page scraping with robots.txt support and OpenAI summarisation cache
+- Landing-page scraping (robots.txt intentionally ignored) with OpenAI summarisation cache
 - Batch LLM relevancy scoring and schema-validated JSON parsing
 - Suggestion review table with quick filters, CSV export, and optional API application hook
 - Dockerised deployment using Python 3.11, FastAPI, SQLAlchemy, and uvicorn
@@ -77,7 +77,7 @@ inside the container. File changes in `app/` are mounted into the container for 
 4. Click **Run analysis**. The app pulls search terms via `campaign_search_term_view` (falling back to
    `search_term_view` when necessary) and collects landing-page URLs from ad final URLs plus
    `landing_page_view`.
-5. Landing pages are fetched (respecting robots.txt), parsed, summarised via OpenAI, and cached.
+5. Landing pages are fetched (ignoring robots.txt because the domains are first-party), parsed, summarised via OpenAI, and cached.
 6. Search terms are batched (≤200 per call) and sent to OpenAI for relevancy scoring and negative keyword
    recommendations. Results are validated against a strict JSON schema.
 7. Review the suggestion table, toggle approvals (or auto-select high-confidence irrelevants), and export the

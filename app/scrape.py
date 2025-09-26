@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
 from typing import Optional
-from urllib.parse import urljoin, urlparse
-from urllib.robotparser import RobotFileParser
 
 import requests
 from bs4 import BeautifulSoup
@@ -18,33 +15,12 @@ USER_AGENT = "SearchTermRelevancyBot/1.0"
 REQUEST_TIMEOUT = 5
 
 
-@lru_cache(maxsize=128)
-def _get_robot_parser(base_url: str) -> RobotFileParser:
-    parser = RobotFileParser()
-    parser.set_url(urljoin(base_url, "/robots.txt"))
-    try:
-        parser.read()
-    except Exception as exc:  # pragma: no cover - network issue fallback
-        logger.debug("Failed to read robots.txt for %s: %s", base_url, exc)
-        parser.disallow_all = False
-    return parser
-
-
-def is_allowed(url: str) -> bool:
-    parsed = urlparse(url)
-    base = f"{parsed.scheme}://{parsed.netloc}"
-    parser = _get_robot_parser(base)
-    try:
-        return parser.can_fetch(USER_AGENT, url)
-    except Exception:  # pragma: no cover - robustness
-        return True
-
-
 def fetch_page(url: str) -> Optional[tuple[str, str]]:
-    """Fetch a landing page respecting robots.txt."""
-    if not is_allowed(url):
-        logger.info("Robots.txt disallows fetching %s", url)
-        return None
+    """Fetch a landing page.
+
+    The application owns the domains it analyses, so we intentionally ignore
+    robots.txt directives that would otherwise block crawling.
+    """
 
     try:
         response = requests.get(
