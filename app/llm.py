@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Iterable, List, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from typing import Dict, Iterable, List, Sequence
 
 try:  # pragma: no cover - optional dependency shim for tests
     from openai import APIError, OpenAI, RateLimitError
@@ -118,6 +119,53 @@ def chunk_terms(terms: Sequence[dict], size: int = 200) -> Iterable[Sequence[dic
         yield terms[idx : idx + size]
 
 
+def _max_parallel_requests() -> int:
+    """Return the number of concurrent OpenAI calls to issue.
+
+    The limit is derived from the optional ``OPENAI_MAX_CONCURRENT_REQUESTS``
+    environment variable. To honour the user's request to stay 15%% below the
+    advertised cap we multiply the configured maximum by 0.85. When the value
+    is unset or invalid we assume a limit of five concurrent calls, yielding
+    four workers after the reduction.
+    """
+
+    default_limit = 5
+    raw = os.getenv("OPENAI_MAX_CONCURRENT_REQUESTS")
+    if not raw:
+        configured = default_limit
+    else:
+        try:
+            configured = int(raw)
+        except ValueError:
+            logger.warning(
+                "Invalid OPENAI_MAX_CONCURRENT_REQUESTS value %s; falling back to %s",
+                raw,
+                default_limit,
+            )
+            configured = default_limit
+    if configured <= 0:
+        return 1
+    calculated = max(1, int(configured * 0.85))
+    return calculated or 1
+
+
+def _analyse_chunk(
+    page_summary: str,
+    campaign_context: str | None,
+    chunk: Sequence[dict],
+) -> list[RelevancyResult]:
+    prompt = _relevancy_user_prompt(page_summary, campaign_context, chunk)
+    for attempt in range(3):
+        try:
+            response_text = _call_relevancy_model(prompt)
+            return parse_relevancy_response(response_text)
+        except ValueError as exc:
+            logger.warning("LLM JSON parse failure (attempt %s): %s", attempt + 1, exc)
+            if attempt == 2:
+                raise
+    return []
+
+
 def _relevancy_user_prompt(
     page_summary: str, campaign_context: str | None, terms: Sequence[dict]
 ) -> str:
@@ -203,18 +251,24 @@ def analyze_search_terms(
     if not terms:
         return []
 
-    results: list[RelevancyResult] = []
-    for chunk in chunk_terms(list(terms)):
-        prompt = _relevancy_user_prompt(page_summary, campaign_context, chunk)
-        for attempt in range(3):
-            try:
-                response_text = _call_relevancy_model(prompt)
-                parsed = parse_relevancy_response(response_text)
-            except ValueError as exc:
-                logger.warning("LLM JSON parse failure (attempt %s): %s", attempt + 1, exc)
-                if attempt == 2:
-                    raise
-                continue
-            results.extend(parsed)
-            break
-    return results
+    chunk_list = list(chunk_terms(list(terms)))
+    if not chunk_list:
+        return []
+
+    worker_count = min(len(chunk_list), _max_parallel_requests())
+    results: Dict[int, list[RelevancyResult]] = {}
+
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_map: Dict[Future[list[RelevancyResult]], int] = {}
+        for index, chunk in enumerate(chunk_list):
+            future = executor.submit(_analyse_chunk, page_summary, campaign_context, chunk)
+            future_map[future] = index
+
+        for future in as_completed(future_map):
+            index = future_map[future]
+            results[index] = future.result()
+
+    ordered: list[RelevancyResult] = []
+    for index in sorted(results):
+        ordered.extend(results[index])
+    return ordered

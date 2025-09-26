@@ -48,6 +48,7 @@ GOOGLE_ADS_OAUTH_CLIENT_SECRET=your_oauth_client_secret
 GOOGLE_ADS_API_VERSION=
 GOOGLE_ADS_LOGIN_CUSTOMER_ID=optional_manager_id
 OPENAI_API_KEY=sk-...
+OPENAI_MAX_CONCURRENT_REQUESTS=
 FEATURE_APPLY_NEGATIVES=false
 ```
 
@@ -106,7 +107,8 @@ pytest
   to a currently supported release) and rebuild the Docker image.
 - Landing-page URLs are sourced from both `ad_group_ad.ad.final_urls` and `landing_page_view` to capture
   expanded final URLs. Duplicate URLs are cached and summaries refreshed on a rolling basis.
-- OpenAI calls use conservative temperature settings (≤0.2), exponential back-off, and strict schema
+- OpenAI calls use conservative temperature settings (≤0.2), exponential back-off, configurable
+  concurrency (set `OPENAI_MAX_CONCURRENT_REQUESTS` and the app will operate at 85% of that limit), and strict schema
   validation with retries to guard against malformed JSON.
 - Applying negatives via the Google Ads API is scaffolded behind a feature flag to prevent accidental account
   changes.

@@ -42,7 +42,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import Flow
 
-
 from .models import User
 from .security import get_encryption_manager
 
