@@ -154,16 +154,44 @@ def _analyse_chunk(
     campaign_context: str | None,
     chunk: Sequence[dict],
 ) -> list[RelevancyResult]:
+    return _analyse_chunk_with_fallback(page_summary, campaign_context, list(chunk))
+
+
+def _analyse_chunk_with_fallback(
+    page_summary: str,
+    campaign_context: str | None,
+    chunk: list[dict],
+) -> list[RelevancyResult]:
+    if not chunk:
+        return []
+
     prompt = _relevancy_user_prompt(page_summary, campaign_context, chunk)
+    last_error: ValueError | None = None
     for attempt in range(3):
         try:
             response_text = _call_relevancy_model(prompt)
             return parse_relevancy_response(response_text)
         except ValueError as exc:
+            last_error = exc
             logger.warning("LLM JSON parse failure (attempt %s): %s", attempt + 1, exc)
-            if attempt == 2:
-                raise
-    return []
+
+    logger.info(
+        "Falling back to smaller batches after repeated LLM parse failures (chunk_size=%s, last_error=%s)",
+        len(chunk),
+        last_error,
+    )
+
+    if len(chunk) == 1:
+        logger.error(
+            "Dropping search term %s after repeated LLM parse failures",
+            chunk[0].get("query"),
+        )
+        return []
+
+    mid = max(1, len(chunk) // 2)
+    left = _analyse_chunk_with_fallback(page_summary, campaign_context, chunk[:mid])
+    right = _analyse_chunk_with_fallback(page_summary, campaign_context, chunk[mid:])
+    return left + right
 
 
 def _relevancy_user_prompt(
