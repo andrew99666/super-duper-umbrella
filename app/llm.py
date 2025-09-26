@@ -6,7 +6,24 @@ import logging
 import os
 from typing import Iterable, List, Sequence
 
-from openai import APIError, OpenAI, RateLimitError
+try:  # pragma: no cover - optional dependency shim for tests
+    from openai import APIError, OpenAI, RateLimitError
+except ImportError:  # pragma: no cover - fallback when openai is missing
+    class APIError(Exception):
+        """Placeholder API error when openai package is unavailable."""
+
+        pass
+
+    class RateLimitError(Exception):
+        """Placeholder rate-limit error when openai package is unavailable."""
+
+        pass
+
+    class OpenAI:  # type: ignore[override]
+        """Minimal stub that signals the OpenAI SDK is missing."""
+
+        def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            raise ImportError("openai package is not installed")
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
@@ -51,7 +68,10 @@ def _get_openai_client() -> OpenAI:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
-    return OpenAI(api_key=api_key)
+    try:
+        return OpenAI(api_key=api_key)
+    except ImportError as exc:  # pragma: no cover - missing dependency
+        raise RuntimeError("The openai Python package is required to call the API.") from exc
 
 
 def _openai_retry():

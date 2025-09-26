@@ -1,11 +1,11 @@
 import types
 
 import pytest
-from google.api_core.exceptions import MethodNotImplemented
 
 from app.google_ads_client import (
     GoogleAdsOAuthError,
     GoogleAdsService,
+    MethodNotImplemented,
     build_google_ads_client,
 )
 

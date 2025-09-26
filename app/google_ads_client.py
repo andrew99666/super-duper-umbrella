@@ -5,16 +5,43 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import date
-from typing import Iterable, Iterator, Sequence
+from typing import Iterable, Iterator, Sequence, TYPE_CHECKING
 from urllib.parse import urljoin
 
-from google.ads.googleads.client import GoogleAdsClient
-from google.ads.googleads.errors import GoogleAdsException
-from google.api_core.exceptions import MethodNotImplemented
-from google.auth.exceptions import RefreshError
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
+try:  # pragma: no cover - optional dependency shim for tests
+    from google.api_core.exceptions import MethodNotImplemented
+except ImportError:  # pragma: no cover - fallback when google-api-core is missing
+    class MethodNotImplemented(Exception):
+        """Placeholder used when google-api-core is not installed."""
+
+        pass
+
+
+try:  # pragma: no cover - optional dependency shim for tests
+    from google.ads.googleads.client import GoogleAdsClient  # type: ignore
+    from google.ads.googleads.errors import GoogleAdsException
+except ImportError:  # pragma: no cover - fallback when google-ads is missing
+    class GoogleAdsException(Exception):
+        """Placeholder used when google-ads is not installed."""
+
+        pass
+
+    class GoogleAdsClient:  # type: ignore[override]
+        """Minimal stub used when the google-ads dependency is absent."""
+
+        @classmethod
+        def load_from_dict(cls, *args, **kwargs):  # type: ignore[no-untyped-def]
+            raise ImportError("google-ads library is not installed")
+
+
+if TYPE_CHECKING:  # pragma: no cover
+    from google.ads.googleads.client import GoogleAdsClient
+    from google.auth.exceptions import RefreshError
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import Flow
+
 
 from .models import User
 from .security import get_encryption_manager
@@ -82,8 +109,15 @@ def _raise_api_version_error(exc: Exception) -> None:
     raise GoogleAdsOAuthError(message) from exc
 
 
-def build_oauth_flow(base_url: str, state: str | None = None) -> Flow:
+def build_oauth_flow(base_url: str, state: str | None = None) -> "Flow":
     """Create an OAuth flow for the Google Ads API."""
+    try:
+        from google_auth_oauthlib.flow import Flow
+    except ImportError as exc:  # pragma: no cover - environment guard
+        raise GoogleAdsOAuthError(
+            "google-auth-oauthlib is required to start the Google Ads OAuth flow."
+        ) from exc
+
     client_id = os.getenv("GOOGLE_ADS_OAUTH_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_ADS_OAUTH_CLIENT_SECRET")
     if not client_id or not client_secret:
@@ -103,7 +137,7 @@ def build_oauth_flow(base_url: str, state: str | None = None) -> Flow:
     return flow
 
 
-def store_user_credentials(user: User, credentials: Credentials) -> None:
+def store_user_credentials(user: User, credentials: "Credentials") -> None:
     """Persist OAuth credentials on the user record."""
     encryption = get_encryption_manager()
     if not credentials.refresh_token:
@@ -120,7 +154,7 @@ def get_refresh_token(user: User) -> str:
     return encryption.decrypt(user.google_refresh_token)
 
 
-def build_google_ads_client(user: User) -> GoogleAdsClient:
+def build_google_ads_client(user: User) -> "GoogleAdsClient":
     developer_token = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN")
     client_id = os.getenv("GOOGLE_ADS_OAUTH_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_ADS_OAUTH_CLIENT_SECRET")
@@ -146,15 +180,26 @@ def build_google_ads_client(user: User) -> GoogleAdsClient:
             client = GoogleAdsClient.load_from_dict(config)
     except MethodNotImplemented as exc:  # pragma: no cover - dependent on client internals
         _raise_api_version_error(exc)
+    except ImportError as exc:  # pragma: no cover - missing dependency
+        raise GoogleAdsOAuthError(
+            "The google-ads client library is not installed. Install `google-ads` to use this application."
+        ) from exc
     return client
 
 
 def _google_ads_retry() -> callable:
+    try:  # pragma: no cover - optional dependency shim for tests
+        from google.ads.googleads.errors import GoogleAdsException as _GoogleAdsException
+        from google.auth.exceptions import RefreshError as _RefreshError
+        retry_types: tuple[type[Exception], ...] = (_GoogleAdsException, _RefreshError)
+    except ImportError:  # pragma: no cover - fall back when deps missing
+        retry_types = (Exception,)
+
     return retry(
         reraise=True,
         stop=stop_after_attempt(5),
         wait=wait_exponential(multiplier=2, min=1, max=30),
-        retry=retry_if_exception_type((GoogleAdsException, RefreshError)),
+        retry=retry_if_exception_type(retry_types),
     )
 
 
@@ -250,7 +295,7 @@ def build_landing_page_view_query(campaign_ids: Sequence[str]) -> str:
 class GoogleAdsService:
     """Wrapper around the Google Ads API client."""
 
-    def __init__(self, client: GoogleAdsClient) -> None:
+    def __init__(self, client: "GoogleAdsClient") -> None:
         self.client = client
 
     @_google_ads_retry()
