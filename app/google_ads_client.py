@@ -99,6 +99,78 @@ class GoogleAdsOAuthError(RuntimeError):
     """Raised when OAuth flow cannot be completed."""
 
 
+def aggregate_search_term_rows(rows: Iterable[SearchTermRow]) -> list[SearchTermRow]:
+    """Aggregate metrics for duplicate search terms within the same campaign.
+
+    Google Ads often returns multiple rows for the same query (for example,
+    one per day). Analysing each entry individually dramatically increases the
+    number of LLM calls. We collapse duplicates while summing metrics to keep
+    the prompt compact and the analysis fast.
+    """
+
+    def _merge_text(existing: str | None, new: str | None) -> str | None:
+        if not existing:
+            return new
+        if not new or new == existing:
+            return existing
+        return "mixed"
+
+    buckets: dict[tuple[str, str], dict[str, object]] = {}
+    for row in rows:
+        term = row.search_term.strip()
+        if not term:
+            continue
+        key = (row.campaign_id, term.lower())
+        bucket = buckets.get(key)
+        if bucket is None:
+            bucket = {
+                "campaign_id": row.campaign_id,
+                "campaign_name": row.campaign_name,
+                "search_term": term,
+                "match_type": row.match_type,
+                "match_source": row.match_source,
+                "impressions": int(row.impressions or 0),
+                "clicks": int(row.clicks or 0),
+                "cost_micros": int(row.cost_micros or 0),
+                "conversions": float(row.conversions or 0.0),
+            }
+            buckets[key] = bucket
+            continue
+
+        bucket["match_type"] = _merge_text(bucket.get("match_type") or None, row.match_type)
+        bucket["match_source"] = _merge_text(bucket.get("match_source") or None, row.match_source)
+        bucket["impressions"] = int(bucket["impressions"]) + int(row.impressions or 0)
+        bucket["clicks"] = int(bucket["clicks"]) + int(row.clicks or 0)
+        bucket["cost_micros"] = int(bucket["cost_micros"]) + int(row.cost_micros or 0)
+        bucket["conversions"] = float(bucket["conversions"]) + float(row.conversions or 0.0)
+
+    aggregated: list[SearchTermRow] = []
+    for bucket in buckets.values():
+        aggregated.append(
+            SearchTermRow(
+                campaign_id=bucket["campaign_id"],
+                campaign_name=bucket["campaign_name"],
+                search_term=bucket["search_term"],
+                date=None,
+                match_type=bucket.get("match_type") or None,
+                match_source=bucket.get("match_source") or None,
+                impressions=int(bucket["impressions"]),
+                clicks=int(bucket["clicks"]),
+                cost_micros=int(bucket["cost_micros"]),
+                conversions=float(bucket["conversions"]),
+            )
+        )
+
+    aggregated.sort(
+        key=lambda row: (
+            -(row.impressions or 0),
+            -(row.clicks or 0),
+            row.search_term,
+        )
+    )
+    return aggregated
+
+
 def _raise_api_version_error(exc: Exception) -> None:
     message = (
         "Google Ads API request failed because the client library is targeting a retired API version. "

@@ -25,6 +25,7 @@ from .google_ads_client import (
     LandingPageRow,
     SearchTermRow,
     CustomerClientSummary,
+    aggregate_search_term_rows,
     build_google_ads_client,
     build_oauth_flow,
     campaigns_to_dict,
@@ -424,12 +425,16 @@ async def analyze(
                     login_customer_id=login_header,
                 )
             )
-            persist_search_terms(session, campaigns, search_rows)
+            aggregated_rows = aggregate_search_term_rows(search_rows)
+            if not aggregated_rows:
+                logger.info("No search terms returned for campaigns %s", ga_campaign_ids)
+                continue
+            persist_search_terms(session, campaigns, aggregated_rows)
             run_llm_analysis(
                 session,
                 analysis_run,
                 campaigns,
-                search_rows,
+                aggregated_rows,
                 landing_page_map,
                 auto_select_irrelevant=auto_select_irrelevant,
             )
@@ -519,18 +524,28 @@ def persist_search_terms(
                 date_value = dt.datetime.strptime(row.date, "%Y-%m-%d").date()
             else:
                 date_value = row.date
-        search_term = SearchTerm(
-            campaign=campaign,
-            term=row.search_term,
-            date=date_value,
-            match_type=row.match_type,
-            match_source=row.match_source,
-            impressions=row.impressions,
-            clicks=row.clicks,
-            cost_micros=row.cost_micros,
-            conversions=row.conversions,
+        existing = (
+            session.execute(
+                select(SearchTerm)
+                .where(SearchTerm.campaign_id == campaign.id)
+                .where(SearchTerm.term == row.search_term)
+            )
+            .scalars()
+            .first()
         )
-        session.add(search_term)
+        if existing:
+            search_term = existing
+        else:
+            search_term = SearchTerm(campaign=campaign, term=row.search_term)
+            session.add(search_term)
+
+        search_term.date = date_value
+        search_term.match_type = row.match_type
+        search_term.match_source = row.match_source
+        search_term.impressions = row.impressions
+        search_term.clicks = row.clicks
+        search_term.cost_micros = row.cost_micros
+        search_term.conversions = row.conversions
     session.flush()
 
 
@@ -571,11 +586,6 @@ def run_llm_analysis(
             terms=term_payloads,
         )
         for result in results:
-            search_term = SearchTerm(
-                campaign=campaign,
-                term=result.query,
-            )
-            # Attempt to reuse existing search term entry
             existing_term = session.execute(
                 select(SearchTerm)
                 .where(SearchTerm.campaign_id == campaign.id)
@@ -585,8 +595,8 @@ def run_llm_analysis(
             if existing_term:
                 search_term = existing_term
             else:
+                search_term = SearchTerm(campaign=campaign, term=result.query)
                 session.add(search_term)
-                session.flush()
 
             analysis = SearchTermAnalysis(
                 search_term=search_term,

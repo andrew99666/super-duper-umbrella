@@ -114,7 +114,7 @@ def generate_page_summary(page: PageContent) -> str:
     return content.strip()
 
 
-def chunk_terms(terms: Sequence[dict], size: int = 200) -> Iterable[Sequence[dict]]:
+def chunk_terms(terms: Sequence[dict], size: int) -> Iterable[Sequence[dict]]:
     for idx in range(0, len(terms), size):
         yield terms[idx : idx + size]
 
@@ -147,6 +147,23 @@ def _max_parallel_requests() -> int:
         return 1
     calculated = max(1, int(configured * 0.85))
     return calculated or 1
+
+
+def _relevancy_chunk_size() -> int:
+    default_size = 60
+    raw = os.getenv("OPENAI_RELEVANCY_CHUNK_SIZE")
+    if not raw:
+        return default_size
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid OPENAI_RELEVANCY_CHUNK_SIZE value %s; falling back to %s",
+            raw,
+            default_size,
+        )
+        return default_size
+    return max(10, min(value, 200))
 
 
 def _analyse_chunk(
@@ -279,7 +296,8 @@ def analyze_search_terms(
     if not terms:
         return []
 
-    chunk_list = list(chunk_terms(list(terms)))
+    chunk_size = _relevancy_chunk_size()
+    chunk_list = list(chunk_terms(list(terms), size=chunk_size))
     if not chunk_list:
         return []
 
