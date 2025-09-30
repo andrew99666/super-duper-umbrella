@@ -60,6 +60,30 @@ class RelevancyResult(BaseModel):
             raise ValueError("query cannot be empty")
         return value
 
+    @field_validator("suggested_match_type", mode="before")
+    @classmethod
+    def normalise_match_type(cls, value: str | None) -> str:
+        """Coerce unexpected match types into a supported value."""
+
+        if value is None:
+            logger.debug("Missing match type from LLM; defaulting to exact")
+            return "exact"
+
+        normalised = str(value).strip().lower()
+        if normalised in {"exact", "phrase"}:
+            return normalised
+
+        if normalised in {"none", "unknown", ""}:
+            logger.debug(
+                "Unsupported match type '%s' from LLM; coercing to exact", normalised
+            )
+            return "exact"
+
+        logger.debug(
+            "Unexpected match type '%s' from LLM; coercing to exact", normalised
+        )
+        return "exact"
+
 
 class RelevancyBatch(BaseModel):
     terms: List[RelevancyResult]
