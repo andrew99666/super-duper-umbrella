@@ -122,7 +122,6 @@ def oauth_callback(request: Request, session: Session = Depends(get_session)) ->
     code = request.query_params.get("code")
     if not code:
         raise HTTPException(status_code=400, detail="Missing OAuth code")
-
     logger.info("Received OAuth callback for state %s", state)
     flow = build_oauth_flow(BASE_URL, state=state)
     code_verifier = request.session.get("code_verifier")
