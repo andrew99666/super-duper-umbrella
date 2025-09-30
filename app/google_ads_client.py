@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import date
 from typing import Iterable, Iterator, Sequence, TYPE_CHECKING
@@ -372,6 +373,7 @@ class GoogleAdsService:
     @_google_ads_retry()
     def list_accessible_customers(self) -> list[dict[str, str | None]]:
         customer_service = self.client.get_service("CustomerService")
+        start = time.perf_counter()
         try:
             response = customer_service.list_accessible_customers()
         except MethodNotImplemented as exc:  # pragma: no cover - network version error
@@ -380,6 +382,11 @@ class GoogleAdsService:
         result = []
         for resource_name in resource_names:
             result.append({"resource_name": resource_name})
+        logger.info(
+            "Google Ads returned %d accessible customers in %.2fs",
+            len(result),
+            time.perf_counter() - start,
+        )
         return result
 
     @_google_ads_retry()
@@ -403,6 +410,7 @@ class GoogleAdsService:
         )
         campaigns: list[CampaignSummary] = []
         try:
+            start = time.perf_counter()
             response = ga_service.search(
                 customer_id=customer_id,
                 query=query,
@@ -419,6 +427,12 @@ class GoogleAdsService:
                         advertising_channel_type=str(campaign.advertising_channel_type),
                     )
                 )
+            logger.info(
+                "Fetched %d campaigns for customer %s in %.2fs",
+                len(campaigns),
+                customer_id,
+                time.perf_counter() - start,
+            )
         except MethodNotImplemented as exc:  # pragma: no cover - network version error
             _raise_api_version_error(exc)
         except GoogleAdsException as exc:  # pragma: no cover - thin wrapper
@@ -449,6 +463,7 @@ class GoogleAdsService:
 
         clients: list[CustomerClientSummary] = []
         try:
+            start = time.perf_counter()
             response = ga_service.search(
                 customer_id=customer_id,
                 query=query,
@@ -488,8 +503,14 @@ class GoogleAdsService:
                     status=str(getattr(client, "status", None)) if getattr(client, "status", None) else None,
                     hidden=hidden,
                 )
-            )
+                )
 
+        logger.info(
+            "Customer %s has %d visible child clients in %.2fs",
+            customer_id,
+            len(clients),
+            time.perf_counter() - start,
+        )
         return clients
 
     @_google_ads_retry()
@@ -504,6 +525,8 @@ class GoogleAdsService:
     ) -> Iterator[SearchTermRow]:
         ga_service = self.client.get_service("GoogleAdsService")
         query = build_campaign_search_term_query(campaign_ids, start_date, end_date)
+        start = time.perf_counter()
+        yielded = 0
         try:
             results = ga_service.search_stream(
                 customer_id=customer_id,
@@ -524,6 +547,7 @@ class GoogleAdsService:
                         cost_micros=row.metrics.cost_micros,
                         conversions=row.metrics.conversions,
                     )
+                    yielded += 1
         except MethodNotImplemented as exc:  # pragma: no cover - network version error
             _raise_api_version_error(exc)
         except GoogleAdsException as exc:
@@ -539,6 +563,13 @@ class GoogleAdsService:
             else:
                 logger.exception("Failed to fetch search terms: %s", exc)
                 raise
+        else:
+            logger.info(
+                "campaign_search_term_view produced %d rows for campaigns %s in %.2fs",
+                yielded,
+                list(campaign_ids),
+                time.perf_counter() - start,
+            )
 
     def _fetch_search_terms_fallback(
         self,
@@ -552,6 +583,8 @@ class GoogleAdsService:
         ga_service = self.client.get_service("GoogleAdsService")
         query = build_search_term_fallback_query(campaign_ids, start_date, end_date)
         try:
+            start = time.perf_counter()
+            yielded = 0
             results = ga_service.search_stream(
                 customer_id=customer_id,
                 query=query,
@@ -561,6 +594,7 @@ class GoogleAdsService:
             _raise_api_version_error(exc)
         for batch in results:
             for row in batch.results:
+                yielded += 1
                 yield SearchTermRow(
                     campaign_id=str(row.campaign.id),
                     campaign_name=str(row.campaign.name),
@@ -573,6 +607,12 @@ class GoogleAdsService:
                     cost_micros=row.metrics.cost_micros,
                     conversions=row.metrics.conversions,
                 )
+        logger.info(
+            "Fallback search_term_view produced %d rows for campaigns %s in %.2fs",
+            yielded,
+            list(campaign_ids),
+            time.perf_counter() - start,
+        )
 
     @_google_ads_retry()
     def fetch_landing_pages(
@@ -586,6 +626,7 @@ class GoogleAdsService:
         ad_query = build_landing_page_query(campaign_ids)
         urls_by_campaign: dict[str, set[str]] = {}
         try:
+            ad_start = time.perf_counter()
             response = ga_service.search_stream(
                 customer_id=customer_id,
                 query=ad_query,
@@ -602,9 +643,16 @@ class GoogleAdsService:
                     urls_by_campaign[campaign_id].add(str(url))
                 for url in getattr(ad, "final_mobile_urls", []) or []:
                     urls_by_campaign[campaign_id].add(str(url))
+        logger.info(
+            "Collected %d ad final URLs for campaigns %s in %.2fs",
+            sum(len(urls) for urls in urls_by_campaign.values()),
+            list(campaign_ids),
+            time.perf_counter() - ad_start,
+        )
 
         lp_query = build_landing_page_view_query(campaign_ids)
         try:
+            lp_start = time.perf_counter()
             response = ga_service.search_stream(
                 customer_id=customer_id,
                 query=lp_query,
@@ -623,6 +671,11 @@ class GoogleAdsService:
                 else:
                     for cid in urls_by_campaign.keys():
                         urls_by_campaign[cid].add(url)
+        logger.info(
+            "Landing page view augmented URLs to %d unique entries in %.2fs",
+            sum(len(urls) for urls in urls_by_campaign.values()),
+            time.perf_counter() - lp_start,
+        )
 
         for campaign_id, urls in urls_by_campaign.items():
             for url in urls:

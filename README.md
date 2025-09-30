@@ -80,11 +80,17 @@ inside the container. File changes in `app/` are mounted into the container for 
    `search_term_view` when necessary) and collects landing-page URLs from ad final URLs plus
    `landing_page_view`.
 5. Landing pages are fetched (ignoring robots.txt because the domains are first-party), parsed, summarised via OpenAI, and cached.
-6. Search terms are deduplicated per campaign, batched (≤60 per call by default), and sent to OpenAI for relevancy scoring and negative keyword
+6. Search terms are deduplicated per campaign, batched (≤120 per call by default), and sent to OpenAI for relevancy scoring and negative keyword
    recommendations. Results are validated against a strict JSON schema.
 7. Review the suggestion table, toggle approvals (or auto-select high-confidence irrelevants), and export the
    approved list as CSV. Optionally enable `FEATURE_APPLY_NEGATIVES=true` and extend `/apply-negatives` to
    push negatives via the Google Ads API.
+
+### Observability & logs
+
+- Logs are streamed to stdout and `logs/latest-run.log`. The file is truncated on each launch so every run starts with fresh diagnostics.
+- Run `python -m app.logging_setup` if you want to initialise the log file ahead of time or confirm the resolved path.
+- Set `LOG_LEVEL=DEBUG` for the most verbose tracing (including OpenAI batching and Google Ads timings).
 
 ## Development
 
@@ -110,7 +116,7 @@ pytest
   expanded final URLs. Duplicate URLs are cached and summaries refreshed on a rolling basis.
 - OpenAI calls use conservative temperature settings (≤0.2), exponential back-off, configurable
   concurrency (set `OPENAI_MAX_CONCURRENT_REQUESTS` and the app will operate at 85% of that limit),
-  and a configurable chunk size (`OPENAI_RELEVANCY_CHUNK_SIZE`, default 60) with strict schema validation
+  and a configurable chunk size (`OPENAI_RELEVANCY_CHUNK_SIZE`, default 120) with strict schema validation
   to guard against malformed JSON while keeping latency low.
 - Applying negatives via the Google Ads API is scaffolded behind a feature flag to prevent accidental account
   changes.

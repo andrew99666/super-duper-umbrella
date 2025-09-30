@@ -7,6 +7,7 @@ import hashlib
 import io
 import logging
 import os
+import time
 from collections import defaultdict, deque
 from typing import Dict, Iterable, List
 from uuid import uuid4
@@ -31,6 +32,7 @@ from .google_ads_client import (
     campaigns_to_dict,
     store_user_credentials,
 )
+from .logging_setup import configure_logging
 from .llm import analyze_search_terms, generate_page_summary
 from .models import (
     AnalysisRun,
@@ -44,8 +46,9 @@ from .models import (
 )
 from .scrape import extract_page_content, fetch_page
 
+LOG_FILE_PATH = configure_logging(os.getenv("LOG_LEVEL"))
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger.info("Logging configured. File output: %s", LOG_FILE_PATH)
 
 app = FastAPI(title="Search Term Relevancy Assistant")
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("APP_SECRET_KEY", "change-me"))
@@ -57,7 +60,11 @@ SUMMARY_TTL = dt.timedelta(days=3)
 
 @app.on_event("startup")
 def on_startup() -> None:
+    start = time.perf_counter()
+    logger.info("Starting application initialisation")
     init_db()
+    duration = time.perf_counter() - start
+    logger.info("Database initialised in %.2fs", duration)
 
 
 def get_current_user(request: Request, session: Session = Depends(get_session)) -> User:
@@ -96,6 +103,7 @@ def auth_google(request: Request) -> RedirectResponse:
             prompt="consent",
             include_granted_scopes="true",
         )
+        logger.info("Generated Google OAuth URL for state %s", state)
     except GoogleAdsOAuthError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -114,13 +122,14 @@ def oauth_callback(request: Request, session: Session = Depends(get_session)) ->
     code = request.query_params.get("code")
     if not code:
         raise HTTPException(status_code=400, detail="Missing OAuth code")
-
+    logger.info("Received OAuth callback for state %s", state)
     flow = build_oauth_flow(BASE_URL, state=state)
     code_verifier = request.session.get("code_verifier")
     if code_verifier:
         flow.code_verifier = code_verifier
     try:
         flow.fetch_token(code=code)
+        logger.info("OAuth token exchange succeeded for state %s", state)
     except Exception as exc:  # pragma: no cover - network
         logger.exception("OAuth token exchange failed: %s", exc)
         raise HTTPException(status_code=400, detail="OAuth token exchange failed") from exc
@@ -141,6 +150,7 @@ def oauth_callback(request: Request, session: Session = Depends(get_session)) ->
     session.add(user)
 
     try:
+        logger.info("Building Google Ads client for user %s", user.id)
         client = build_google_ads_client(user)
         service = GoogleAdsService(client)
         sync_customers(session, user, service)
@@ -156,7 +166,10 @@ def oauth_callback(request: Request, session: Session = Depends(get_session)) ->
 
 
 def sync_customers(session: Session, user: User, service: GoogleAdsService) -> None:
+    sync_start = time.perf_counter()
+    logger.info("Syncing accessible customers for user %s", user.id)
     accessible = service.list_accessible_customers()
+    logger.info("Retrieved %d accessible customer resource names", len(accessible))
     default_login_id = os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
 
     # Ensure we prefer the configured login customer ID if provided.
@@ -177,6 +190,7 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
             parent_logins.setdefault(resource_name, preferred_login or customer_id)
 
     if not queue:
+        logger.warning("No accessible customers returned for user %s", user.id)
         return
 
     seen_ids: set[str] = set()
@@ -197,8 +211,14 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
         is_manager = summary.manager if summary else False
 
         try:
+            fetch_start = time.perf_counter()
             customer_data = service.get_customer(
                 resource_name, login_customer_id=login_customer_id
+            )
+            logger.debug(
+                "Fetched customer %s details in %.2fs",
+                resource_name,
+                time.perf_counter() - fetch_start,
             )
             descriptive_name = getattr(customer_data, "descriptive_name", descriptive_name)
             currency_code = getattr(customer_data, "currency_code", currency_code)
@@ -228,8 +248,15 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
             manager_candidates.append(customer_id)
 
         try:
+            child_start = time.perf_counter()
             child_customers = service.list_customer_clients(
                 customer_id, login_customer_id=login_customer_id or customer_id
+            )
+            logger.info(
+                "Customer %s returned %d child accounts in %.2fs",
+                customer_id,
+                len(child_customers),
+                time.perf_counter() - child_start,
             )
         except Exception as exc:  # pragma: no cover - network error fallback
             logger.debug("Failed to list child customers for %s: %s", customer_id, exc)
@@ -254,6 +281,9 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
             if first:
                 user.login_customer_id = first.split("/")[-1]
         session.add(user)
+        logger.info("Selected login customer ID %s for user %s", user.login_customer_id, user.id)
+
+    logger.info("Customer sync completed in %.2fs", time.perf_counter() - sync_start)
 
 
 @app.get("/campaigns", response_class=HTMLResponse)
@@ -262,6 +292,7 @@ async def list_campaigns(
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> HTMLResponse:
+    logger.info("Listing campaigns for user %s", user.id)
     client = build_google_ads_client(user)
     service = GoogleAdsService(client)
 
@@ -288,8 +319,15 @@ async def list_campaigns(
 
     request.session["selected_customer_id"] = customer_id
 
+    list_start = time.perf_counter()
     campaigns = service.list_campaigns(
         customer_id, login_customer_id=user.login_customer_id or os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+    )
+    logger.info(
+        "Fetched %d campaigns for customer %s in %.2fs",
+        len(campaigns),
+        customer_id,
+        time.perf_counter() - list_start,
     )
     persist_campaigns(session, user, customer_id, campaigns)
 
@@ -316,6 +354,8 @@ async def list_campaigns(
 def persist_campaigns(
     session: Session, user: User, customer_id: str, campaigns: Iterable
 ) -> None:
+    start = time.perf_counter()
+    campaign_list = list(campaigns)
     customer = session.execute(
         select(GoogleAdsCustomer).where(GoogleAdsCustomer.customer_id == customer_id)
     ).scalar_one_or_none()
@@ -334,7 +374,7 @@ def persist_campaigns(
             select(Campaign).where(Campaign.customer_id == customer.id)
         ).scalars()
     }
-    for summary in campaigns:
+    for summary in campaign_list:
         record = existing_campaigns.get(summary.campaign_id)
         if not record:
             record = Campaign(
@@ -349,6 +389,12 @@ def persist_campaigns(
             record.status = summary.status
             record.advertising_channel_type = summary.advertising_channel_type
         session.add(record)
+    logger.info(
+        "Persisted %d campaigns for customer %s in %.2fs",
+        len(campaign_list),
+        customer_id,
+        time.perf_counter() - start,
+    )
 
 
 @app.post("/analyze", response_class=HTMLResponse)
@@ -364,6 +410,13 @@ async def analyze(
     if not campaign_ids:
         raise HTTPException(status_code=400, detail="No campaigns selected")
 
+    analysis_timer = time.perf_counter()
+    logger.info(
+        "Starting analysis for campaigns %s with range %s to %s",
+        campaign_ids,
+        start_date,
+        end_date,
+    )
     try:
         start = dt.datetime.strptime(start_date, "%Y-%m-%d").date()
         end = dt.datetime.strptime(end_date, "%Y-%m-%d").date()
@@ -403,11 +456,23 @@ async def analyze(
     try:
         login_header = user.login_customer_id or os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
         for customer_id, campaigns in campaigns_by_customer.items():
+            customer_timer = time.perf_counter()
             ga_campaign_ids = [campaign.campaign_id for campaign in campaigns]
+            logger.info(
+                "Fetching landing pages for customer %s campaigns %s",
+                customer_id,
+                ga_campaign_ids,
+            )
             landing_pages = list(
                 service.fetch_landing_pages(
                     customer_id, ga_campaign_ids, login_customer_id=login_header
                 )
+            )
+            logger.info(
+                "Fetched %d landing pages for customer %s in %.2fs",
+                len(landing_pages),
+                customer_id,
+                time.perf_counter() - customer_timer,
             )
             for lp in landing_pages:
                 landing_page = get_or_create_landing_page(session, lp)
@@ -416,6 +481,12 @@ async def analyze(
             if "*" not in landing_page_map and landing_page_map:
                 landing_page_map["*"] = next(iter(landing_page_map.values()))
 
+            logger.info(
+                "Fetching search terms for customer %s campaigns %s",
+                customer_id,
+                ga_campaign_ids,
+            )
+            search_timer = time.perf_counter()
             search_rows = list(
                 service.fetch_search_terms(
                     customer_id,
@@ -425,10 +496,21 @@ async def analyze(
                     login_customer_id=login_header,
                 )
             )
+            logger.info(
+                "Fetched %d raw search term rows for customer %s in %.2fs",
+                len(search_rows),
+                customer_id,
+                time.perf_counter() - search_timer,
+            )
             aggregated_rows = aggregate_search_term_rows(search_rows)
             if not aggregated_rows:
                 logger.info("No search terms returned for campaigns %s", ga_campaign_ids)
                 continue
+            logger.info(
+                "Aggregated search terms down to %d rows for campaigns %s",
+                len(aggregated_rows),
+                ga_campaign_ids,
+            )
             persist_search_terms(session, campaigns, aggregated_rows)
             run_llm_analysis(
                 session,
@@ -458,6 +540,12 @@ async def analyze(
         .scalars()
         .all()
     )
+    logger.info(
+        "Analysis %s produced %d suggestions in %.2fs",
+        analysis_run.id,
+        len(suggestions),
+        time.perf_counter() - analysis_timer,
+    )
 
     context = {
         "request": request,
@@ -471,6 +559,7 @@ async def analyze(
 
 def get_or_create_landing_page(session: Session, row: LandingPageRow) -> LandingPage:
     url = row.url
+    logger.debug("Fetching cached landing page for %s", url)
     existing = session.execute(
         select(LandingPage).where(LandingPage.url == url)
     ).scalar_one_or_none()
@@ -481,12 +570,18 @@ def get_or_create_landing_page(session: Session, row: LandingPageRow) -> Landing
             not landing_page.summary_created_at
             or (now - landing_page.summary_created_at) > SUMMARY_TTL
         )
+        if needs_refresh:
+            logger.info("Landing page %s summary expired; refreshing", url)
+        else:
+            logger.info("Using cached landing page summary for %s", url)
     else:
         landing_page = LandingPage(url=url)
         session.add(landing_page)
         needs_refresh = True
+        logger.info("Discovered new landing page %s", url)
 
     if needs_refresh:
+        fetch_start = time.perf_counter()
         page_data = fetch_page(url)
         if page_data:
             final_url, html = page_data
@@ -502,6 +597,11 @@ def get_or_create_landing_page(session: Session, row: LandingPageRow) -> Landing
             summary = generate_page_summary(content)
             landing_page.summary = summary
             landing_page.summary_created_at = now
+            logger.info(
+                "Generated landing page summary for %s in %.2fs",
+                url,
+                time.perf_counter() - fetch_start,
+            )
         else:
             logger.info("Skipping LLM summary for %s due to fetch failure", url)
     session.add(landing_page)
@@ -513,7 +613,10 @@ def persist_search_terms(
     campaigns: Iterable[Campaign],
     rows: Iterable[SearchTermRow],
 ) -> None:
+    start = time.perf_counter()
+    rows = list(rows)
     campaigns_by_id = {campaign.campaign_id: campaign for campaign in campaigns}
+    processed = 0
     for row in rows:
         campaign = campaigns_by_id.get(row.campaign_id)
         if not campaign:
@@ -546,7 +649,13 @@ def persist_search_terms(
         search_term.clicks = row.clicks
         search_term.cost_micros = row.cost_micros
         search_term.conversions = row.conversions
+        processed += 1
     session.flush()
+    logger.info(
+        "Persisted %d search term rows in %.2fs",
+        processed,
+        time.perf_counter() - start,
+    )
 
 
 def run_llm_analysis(
@@ -557,12 +666,20 @@ def run_llm_analysis(
     landing_pages: Dict[str, LandingPage],
     auto_select_irrelevant: bool,
 ) -> None:
+    start = time.perf_counter()
+    rows = list(rows)
+    logger.info("Running LLM analysis over %d aggregated search terms", len(rows))
     campaigns_by_id = {campaign.campaign_id: campaign for campaign in campaigns}
     grouped_terms: Dict[str, List[SearchTermRow]] = defaultdict(list)
     for row in rows:
         grouped_terms[row.campaign_id].append(row)
 
     for campaign_id, term_rows in grouped_terms.items():
+        logger.info(
+            "Analysing %d search terms for campaign %s",
+            len(term_rows),
+            campaign_id,
+        )
         landing_page = landing_pages.get(campaign_id) or landing_pages.get("*")
         if not landing_page or not landing_page.summary:
             logger.info("No landing page summary for campaign %s; skipping LLM analysis", campaign_id)
@@ -580,11 +697,21 @@ def run_llm_analysis(
             }
             for r in term_rows
         ]
+        llm_start = time.perf_counter()
         results = analyze_search_terms(
             page_summary=landing_page.summary,
             campaign_context=f"Campaign: {campaign.name}",
             terms=term_payloads,
         )
+        logger.info(
+            "LLM returned %d results for campaign %s in %.2fs",
+            len(results),
+            campaign_id,
+            time.perf_counter() - llm_start,
+        )
+        if not results:
+            logger.warning("No relevancy suggestions generated for campaign %s", campaign_id)
+            continue
         for result in results:
             existing_term = session.execute(
                 select(SearchTerm)
@@ -622,6 +749,16 @@ def run_llm_analysis(
                 approved=auto_approve,
             )
             session.add(suggestion)
+            logger.debug(
+                "Recorded suggestion for term '%s' (negative=%s, confidence=%.2f)",
+                result.query,
+                result.suggest_negative,
+                result.confidence,
+            )
+    logger.info(
+        "Completed LLM analysis phase in %.2fs",
+        time.perf_counter() - start,
+    )
 
 
 @app.post("/suggestions/{suggestion_id}/toggle")

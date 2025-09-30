@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from typing import Dict, Iterable, List, Sequence
 
@@ -125,6 +126,7 @@ def generate_page_summary(page: PageContent) -> str:
         "visible_text_excerpt": page.visible_text_excerpt[:1500],
         "canonical_url": page.canonical_url or "",
     }
+    start = time.perf_counter()
     response = client.chat.completions.create(
         model=_model_name(),
         temperature=0.2,
@@ -134,6 +136,11 @@ def generate_page_summary(page: PageContent) -> str:
         ],
     )
     content = response.choices[0].message.content or ""
+    logger.info(
+        "Generated LLM summary for %s in %.2fs",
+        page.url,
+        time.perf_counter() - start,
+    )
     logger.debug("LLM summary response: %s", content)
     return content.strip()
 
@@ -174,7 +181,7 @@ def _max_parallel_requests() -> int:
 
 
 def _relevancy_chunk_size() -> int:
-    default_size = 60
+    default_size = 120
     raw = os.getenv("OPENAI_RELEVANCY_CHUNK_SIZE")
     if not raw:
         return default_size
@@ -209,6 +216,11 @@ def _analyse_chunk_with_fallback(
     prompt = _relevancy_user_prompt(page_summary, campaign_context, chunk)
     last_error: ValueError | None = None
     for attempt in range(3):
+        logger.debug(
+            "Calling OpenAI relevancy model for %d terms (attempt %d)",
+            len(chunk),
+            attempt + 1,
+        )
         try:
             response_text = _call_relevancy_model(prompt)
             return parse_relevancy_response(response_text)
@@ -321,11 +333,19 @@ def analyze_search_terms(
         return []
 
     chunk_size = _relevancy_chunk_size()
+    start = time.perf_counter()
     chunk_list = list(chunk_terms(list(terms), size=chunk_size))
     if not chunk_list:
         return []
 
     worker_count = min(len(chunk_list), _max_parallel_requests())
+    logger.info(
+        "Analysing %d search terms in %d chunks (chunk_size=%d, workers=%d)",
+        len(terms),
+        len(chunk_list),
+        chunk_size,
+        worker_count,
+    )
     results: Dict[int, list[RelevancyResult]] = {}
 
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
@@ -341,4 +361,9 @@ def analyze_search_terms(
     ordered: list[RelevancyResult] = []
     for index in sorted(results):
         ordered.extend(results[index])
+    logger.info(
+        "OpenAI relevancy analysis completed with %d results in %.2fs",
+        len(ordered),
+        time.perf_counter() - start,
+    )
     return ordered
