@@ -33,16 +33,24 @@ from .schemas import PageContent
 
 logger = logging.getLogger(__name__)
 
-PAGE_SUMMARY_SYSTEM_PROMPT = (
+DEFAULT_PAGE_SUMMARY_SYSTEM_PROMPT = (
     "You analyze a landing page to infer its product/service, audience, and exclusions. "
     "Return a concise, factual summary (bulleted), avoid marketing fluff."
 )
 
-RELEVANCY_SYSTEM_PROMPT = (
+DEFAULT_RELEVANCY_SYSTEM_PROMPT = (
     "You classify paid search queries as relevant vs irrelevant for a given landing page. "
     "Be conservative. Do not block brand or near-brand terms. Prefer EXACT negatives for single clear bad "
     "queries; PHRASE if many bad variants share a phrase. Output only JSON matching the provided schema."
 )
+
+
+def _page_summary_prompt() -> str:
+    return os.getenv("OPENAI_PAGE_SUMMARY_SYSTEM_PROMPT", DEFAULT_PAGE_SUMMARY_SYSTEM_PROMPT)
+
+
+def _relevancy_prompt() -> str:
+    return os.getenv("OPENAI_RELEVANCY_SYSTEM_PROMPT", DEFAULT_RELEVANCY_SYSTEM_PROMPT)
 
 
 class RelevancyResult(BaseModel):
@@ -157,7 +165,7 @@ def generate_page_summary(page: PageContent) -> str:
     response = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": PAGE_SUMMARY_SYSTEM_PROMPT},
+            {"role": "system", "content": _page_summary_prompt()},
             {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
         ],
         **_temperature_kwargs(model, 0.2),
@@ -340,7 +348,7 @@ def _call_relevancy_model(prompt: str) -> str:
     response = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": RELEVANCY_SYSTEM_PROMPT},
+            {"role": "system", "content": _relevancy_prompt()},
             {"role": "user", "content": prompt},
         ],
         response_format={"type": "json_object"},
