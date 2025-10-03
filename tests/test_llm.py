@@ -71,4 +71,8 @@ def test_temperature_kwargs_respects_model_defaults():
     kwargs_allowed = llm._temperature_kwargs("gpt-4o", 0.2)
     assert kwargs_allowed == {"temperature": 0.2}
 
+    # Non-standard casing and other GPT-5 variants should also skip overrides
+    kwargs_variant = llm._temperature_kwargs("GPT-5-preview", 0.0)
+    assert kwargs_variant == {}
+
     llm._temperature_warnings_issued.clear()

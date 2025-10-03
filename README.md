@@ -60,8 +60,8 @@ Only set it (for example, `v21`) if Google retires the default and you need to p
 
 OpenAI calls default to the `gpt-5-nano` chat model. Override the model by setting `OPENAI_MODEL`, adjust
 parallelism with `OPENAI_MAX_CONCURRENT_REQUESTS` (default 60 before the 15% safety margin), and tune batch
-size via `OPENAI_RELEVANCY_CHUNK_SIZE`. Some lightweight models (including `gpt-5-nano`) require the service
-default temperature; the app automatically omits overrides when a model rejects custom values.
+size via `OPENAI_RELEVANCY_CHUNK_SIZE`. The entire GPT-5 family ignores custom temperature values, so the app
+automatically skips sending that parameter while still honouring overrides for other models.
 
 All sensitive values are read from environment variables at runtime. Refresh tokens are encrypted at rest
 using a key derived from `APP_SECRET_KEY`.

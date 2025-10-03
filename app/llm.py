@@ -113,7 +113,9 @@ def _model_name() -> str:
     return os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 
-_DEFAULT_TEMPERATURE_MODELS = {"gpt-5-nano"}
+# Models in the GPT-5 family currently ignore custom temperature values and
+# return 400 errors when one is supplied. We therefore suppress overrides for
+# those models entirely while still allowing explicit values for others.
 _temperature_warnings_issued: set[str] = set()
 
 
@@ -123,14 +125,15 @@ def _temperature_kwargs(model: str, desired: float | None) -> dict[str, float]:
     if desired is None:
         return {}
 
-    if model in _DEFAULT_TEMPERATURE_MODELS:
-        if model not in _temperature_warnings_issued and desired != 1:
+    model_key = model.lower()
+    if model_key.startswith("gpt-5"):
+        if model_key not in _temperature_warnings_issued and desired != 1:
             logger.info(
-                "Model %s enforces default temperature; ignoring override %.2f",
+                "Model %s ignores custom temperature; skipping override %.2f",
                 model,
                 desired,
             )
-            _temperature_warnings_issued.add(model)
+            _temperature_warnings_issued.add(model_key)
         return {}
 
     return {"temperature": desired}
