@@ -160,7 +160,7 @@ def _max_parallel_requests() -> int:
     four workers after the reduction.
     """
 
-    default_limit = 5
+    default_limit = 8
     raw = os.getenv("OPENAI_MAX_CONCURRENT_REQUESTS")
     if not raw:
         configured = default_limit
@@ -181,7 +181,7 @@ def _max_parallel_requests() -> int:
 
 
 def _relevancy_chunk_size() -> int:
-    default_size = 120
+    default_size = 80
     raw = os.getenv("OPENAI_RELEVANCY_CHUNK_SIZE")
     if not raw:
         return default_size

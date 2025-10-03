@@ -57,6 +57,52 @@ TEMPLATES = Jinja2Templates(directory="app/templates")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 SUMMARY_TTL = dt.timedelta(days=3)
 
+DEFAULT_MAX_TERMS = int(os.getenv("OPENAI_MAX_TERMS", "1500") or 0) or 1500
+MIN_METRIC_THRESHOLD = int(os.getenv("OPENAI_MIN_IMPRESSIONS", "0") or 0)
+
+
+def prioritise_search_terms(rows: list[SearchTermRow]) -> list[SearchTermRow]:
+    """Down-select rows for LLM analysis based on performance metrics.
+
+    The OpenAI calls are the slowest portion of the workflow. Large accounts
+    can return thousands of aggregated queries which would otherwise result in
+    many long-running API calls. We keep all terms that have recorded
+    conversions, then prioritise the remainder by cost, clicks, and
+    impressions. Low-activity rows (below ``MIN_METRIC_THRESHOLD`` impressions)
+    are dropped entirely. The final list is capped at ``DEFAULT_MAX_TERMS`` to
+    ensure the analysis completes in minutes rather than hours.
+    """
+
+    if not rows:
+        return []
+
+    filtered: list[SearchTermRow] = []
+    for row in rows:
+        if row.impressions and row.impressions < MIN_METRIC_THRESHOLD:
+            continue
+        filtered.append(row)
+
+    if len(filtered) <= DEFAULT_MAX_TERMS:
+        return filtered
+
+    converters = [r for r in filtered if (r.conversions or 0) > 0]
+    non_converters = [r for r in filtered if (r.conversions or 0) <= 0]
+    non_converters.sort(
+        key=lambda r: (
+            r.cost_micros or 0,
+            r.clicks or 0,
+            r.impressions or 0,
+            r.search_term,
+        ),
+        reverse=True,
+    )
+
+    prioritised = converters + non_converters
+    if len(prioritised) <= DEFAULT_MAX_TERMS:
+        return prioritised
+
+    return prioritised[:DEFAULT_MAX_TERMS]
+
 
 @app.on_event("startup")
 def on_startup() -> None:
@@ -122,6 +168,7 @@ def oauth_callback(request: Request, session: Session = Depends(get_session)) ->
     code = request.query_params.get("code")
     if not code:
         raise HTTPException(status_code=400, detail="Missing OAuth code")
+
     logger.info("Received OAuth callback for state %s", state)
     flow = build_oauth_flow(BASE_URL, state=state)
     code_verifier = request.session.get("code_verifier")
@@ -511,12 +558,21 @@ async def analyze(
                 len(aggregated_rows),
                 ga_campaign_ids,
             )
-            persist_search_terms(session, campaigns, aggregated_rows)
+            prioritised_rows = prioritise_search_terms(list(aggregated_rows))
+            skipped = len(aggregated_rows) - len(prioritised_rows)
+            if skipped > 0:
+                logger.info(
+                    "Skipping %d low-signal search terms (max_terms=%d, min_impressions=%d)",
+                    skipped,
+                    DEFAULT_MAX_TERMS,
+                    MIN_METRIC_THRESHOLD,
+                )
+            persist_search_terms(session, campaigns, prioritised_rows)
             run_llm_analysis(
                 session,
                 analysis_run,
                 campaigns,
-                aggregated_rows,
+                prioritised_rows,
                 landing_page_map,
                 auto_select_irrelevant=auto_select_irrelevant,
             )
@@ -531,6 +587,7 @@ async def analyze(
         analysis_run.completed_at = dt.datetime.utcnow()
         session.add(analysis_run)
 
+    session.flush()
     suggestions = (
         session.execute(
             select(Suggestion).join(Suggestion.analysis).where(
