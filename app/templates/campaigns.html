@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="bg-white shadow-sm rounded-lg p-8">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-800">Campaign picker</h1>
+      <p class="text-sm text-slate-500">Select one or more campaigns and a date range to analyse.</p>
+    </div>
+    <form method="get" action="/campaigns" class="flex items-center gap-2">
+      <label for="customer_id" class="text-sm text-slate-500">Account</label>
+      <select
+        id="customer_id"
+        name="customer_id"
+        class="border border-slate-300 rounded-md px-2 py-1 text-sm"
+        onchange="this.form.submit()"
+      >
+        {% for customer in customers %}
+        <option value="{{ customer.customer_id }}" {% if customer.customer_id == selected_customer %}selected{% endif %}>
+          {{ customer.descriptive_name or customer.customer_id }}
+        </option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  <form
+    id="analysis-form"
+    class="space-y-6"
+    method="post"
+    action="/analyze"
+    hx-post="/analyze"
+    hx-trigger="submit"
+    hx-target="#analysis-results"
+    hx-swap="innerHTML"
+  >
+    <input type="hidden" name="customer_id" value="{{ selected_customer }}" />
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label class="flex flex-col text-sm text-slate-600">
+        Start date
+        <input
+          type="date"
+          name="start_date"
+          required
+          value="{{ default_start }}"
+          class="mt-1 border border-slate-300 rounded-md px-3 py-2"
+        />
+      </label>
+      <label class="flex flex-col text-sm text-slate-600">
+        End date
+        <input
+          type="date"
+          name="end_date"
+          required
+          value="{{ default_end }}"
+          class="mt-1 border border-slate-300 rounded-md px-3 py-2"
+        />
+      </label>
+    </div>
+
+    <div>
+      <h2 class="text-lg font-medium text-slate-700 mb-2">Campaigns</h2>
+      {% if campaigns %}
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="campaign-list">
+        {% for campaign in campaigns %}
+        <label class="flex items-center gap-3 border border-slate-200 rounded-md px-3 py-2 hover:border-blue-300">
+          <input
+            type="checkbox"
+            name="campaign_ids"
+            value="{{ campaign.campaign_id }}"
+            class="h-4 w-4 text-blue-600 border-slate-300 rounded"
+          />
+          <span class="text-sm">
+            <span class="font-medium text-slate-700">{{ campaign.name }}</span>
+            <span class="block text-xs text-slate-500">{{ campaign.advertising_channel_type }} · {{ campaign.status }}</span>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-sm text-slate-500">No campaigns found for the selected account.</p>
+      {% endif %}
+    </div>
+
+    <div class="flex items-center justify-between">
+      <label class="flex items-center gap-2 text-sm text-slate-600">
+        <input type="checkbox" name="auto_select" value="irrelevant" class="h-4 w-4" checked />
+        Auto-select obvious negatives (confidence ≥ 0.8)
+      </label>
+      <button
+        type="submit"
+        class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
+      >
+        Run analysis
+      </button>
+    </div>
+  </form>
+</div>
+
+<div id="analysis-results" class="mt-8"></div>
+{% endblock %}
