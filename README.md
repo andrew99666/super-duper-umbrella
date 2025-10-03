@@ -58,6 +58,10 @@ FEATURE_APPLY_NEGATIVES=false
 Leave `GOOGLE_ADS_API_VERSION` empty to use the latest version supported by the installed `google-ads` library.
 Only set it (for example, `v21`) if Google retires the default and you need to pin to a specific release.
 
+OpenAI calls default to the `gpt-5-nano` chat model. Override the model by setting `OPENAI_MODEL`, adjust
+parallelism with `OPENAI_MAX_CONCURRENT_REQUESTS` (default 60 before the 15% safety margin), and tune batch
+size via `OPENAI_RELEVANCY_CHUNK_SIZE`.
+
 All sensitive values are read from environment variables at runtime. Refresh tokens are encrypted at rest
 using a key derived from `APP_SECRET_KEY`.
 
@@ -117,9 +121,9 @@ pytest
 - Landing-page URLs are sourced from both `ad_group_ad.ad.final_urls` and `landing_page_view` to capture
   expanded final URLs. Duplicate URLs are cached and summaries refreshed on a rolling basis.
 - OpenAI calls use conservative temperature settings (≤0.2), exponential back-off, configurable
-  concurrency (set `OPENAI_MAX_CONCURRENT_REQUESTS` and the app will operate at 85% of that limit),
-  and tunable batching (`OPENAI_RELEVANCY_CHUNK_SIZE`, default 80) plus per-run caps (`OPENAI_MAX_TERMS`)
-  and impression thresholds (`OPENAI_MIN_IMPRESSIONS`) to guard against malformed JSON while
-  keeping latency low.
+  concurrency (set `OPENAI_MAX_CONCURRENT_REQUESTS` and the app will operate at 85% of that limit; the
+  default of 60 yields 51 parallel workers), and tunable batching (`OPENAI_RELEVANCY_CHUNK_SIZE`, default 80)
+  plus per-run caps (`OPENAI_MAX_TERMS`) and impression thresholds (`OPENAI_MIN_IMPRESSIONS`) to guard against
+  malformed JSON while keeping latency low.
 - Applying negatives via the Google Ads API is scaffolded behind a feature flag to prevent accidental account
   changes.

@@ -110,7 +110,7 @@ def _openai_retry():
 
 
 def _model_name() -> str:
-    return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    return os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 
 @_openai_retry()
@@ -156,11 +156,11 @@ def _max_parallel_requests() -> int:
     The limit is derived from the optional ``OPENAI_MAX_CONCURRENT_REQUESTS``
     environment variable. To honour the user's request to stay 15%% below the
     advertised cap we multiply the configured maximum by 0.85. When the value
-    is unset or invalid we assume a limit of five concurrent calls, yielding
-    four workers after the reduction.
+    is unset or invalid we assume a generous limit of 60 concurrent calls,
+    yielding 51 workers after the reduction.
     """
 
-    default_limit = 8
+    default_limit = 60
     raw = os.getenv("OPENAI_MAX_CONCURRENT_REQUESTS")
     if not raw:
         configured = default_limit
