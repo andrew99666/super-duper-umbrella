@@ -113,6 +113,29 @@ def _model_name() -> str:
     return os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 
+_DEFAULT_TEMPERATURE_MODELS = {"gpt-5-nano"}
+_temperature_warnings_issued: set[str] = set()
+
+
+def _temperature_kwargs(model: str, desired: float | None) -> dict[str, float]:
+    """Return kwargs for temperature respecting model limitations."""
+
+    if desired is None:
+        return {}
+
+    if model in _DEFAULT_TEMPERATURE_MODELS:
+        if model not in _temperature_warnings_issued and desired != 1:
+            logger.info(
+                "Model %s enforces default temperature; ignoring override %.2f",
+                model,
+                desired,
+            )
+            _temperature_warnings_issued.add(model)
+        return {}
+
+    return {"temperature": desired}
+
+
 @_openai_retry()
 def generate_page_summary(page: PageContent) -> str:
     """Create a compact landing-page summary using the LLM."""
@@ -127,13 +150,14 @@ def generate_page_summary(page: PageContent) -> str:
         "canonical_url": page.canonical_url or "",
     }
     start = time.perf_counter()
+    model = _model_name()
     response = client.chat.completions.create(
-        model=_model_name(),
-        temperature=0.2,
+        model=model,
         messages=[
             {"role": "system", "content": PAGE_SUMMARY_SYSTEM_PROMPT},
             {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
         ],
+        **_temperature_kwargs(model, 0.2),
     )
     content = response.choices[0].message.content or ""
     logger.info(
@@ -309,14 +333,15 @@ def parse_relevancy_response(content: str) -> list[RelevancyResult]:
 @_openai_retry()
 def _call_relevancy_model(prompt: str) -> str:
     client = _get_openai_client()
+    model = _model_name()
     response = client.chat.completions.create(
-        model=_model_name(),
-        temperature=0.0,
+        model=model,
         messages=[
             {"role": "system", "content": RELEVANCY_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
         response_format={"type": "json_object"},
+        **_temperature_kwargs(model, 0.0),
     )
     content = response.choices[0].message.content or ""
     logger.debug("LLM relevancy response: %s", content)

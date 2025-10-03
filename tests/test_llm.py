@@ -59,3 +59,16 @@ def test_analyze_search_terms_drops_single_term_after_failures(monkeypatch):
     results = llm.analyze_search_terms("summary", "context", terms)
 
     assert results == []
+
+
+def test_temperature_kwargs_respects_model_defaults():
+    llm._temperature_warnings_issued.clear()
+    # Ensure helper skips overrides for restricted models
+    kwargs = llm._temperature_kwargs("gpt-5-nano", 0.0)
+    assert kwargs == {}
+
+    # Models not in the restriction list should pass through values
+    kwargs_allowed = llm._temperature_kwargs("gpt-4o", 0.2)
+    assert kwargs_allowed == {"temperature": 0.2}
+
+    llm._temperature_warnings_issued.clear()
