@@ -34,14 +34,11 @@ from .schemas import PageContent
 logger = logging.getLogger(__name__)
 
 DEFAULT_PAGE_SUMMARY_SYSTEM_PROMPT = (
-    "You analyze a landing page to infer its product/service, audience, and exclusions. "
-    "Return a concise, factual summary (bulleted), avoid marketing fluff."
+    "You analyze a single landing page and produce a short, factual brief. Task: 1) Identify the product/service offered. 2) Identify the intended audience (who it’s for). 3) Identify explicit or strongly implied exclusions (who/where it’s NOT for, disqualifiers, prerequisites). 4) Optional but only if clearly stated: pricing/tier, geo coverage, hours, booking or purchase method, regulatory constraints. Rules: - Base all points ONLY on the page content and unambiguous implications. No guessing or marketing language. - If something isn’t stated, write “Not specified”. - Keep brand names as on page; don’t generalize. - Write 5–8 bullet points, max ~120 words total. - Use terse noun phrases; no salesy adjectives. Output: - Bulleted list only (no intro, no conclusion)."
 )
 
 DEFAULT_RELEVANCY_SYSTEM_PROMPT = (
-    "You classify paid search queries as relevant vs irrelevant for a given landing page. "
-    "Be conservative. Do not block brand or near-brand terms. Prefer EXACT negatives for single clear bad "
-    "queries; PHRASE if many bad variants share a phrase. Output only JSON matching the provided schema."
+    "Classify paid search queries for a given landing page and propose negatives. Definitions: - Relevant: clearly matches the offering and audience. - Irrelevant: clearly conflicts with the offering, audience, geo, prerequisites, or intent (e.g., jobs, support-only, DIY when service-only, out-of-area, competitors if LP doesn’t position against them, etc.). - Borderline/ambiguous → treat as Relevant (be conservative). - Brand/near-brand terms (brand name, site/domain, common misspellings) must NOT be marked irrelevant or negated. Negative keyword policy: - Prefer EXACT negatives for isolated one-off bad queries. - Use PHRASE negatives only when ≥3 irrelevant queries share the same non-brand phrase that safely removes a class of bad traffic. - PHRASE negatives must be 2–3 words, specific, and avoid overbroad tokens (e.g., not just “free”, “near me”). - Never generate negatives that block the brand/near-brand. - Keep all lowercase for negatives. Process (do silently; do NOT include reasoning in output): 1) For each query, decide Relevant vs Irrelevant using the LP summary’s “who it’s for” and “exclusions”. 2) Cluster irrelevant queries by shared 2–3-word phrases; promote a phrase to PHRASE negative if it appears in ≥3 queries and is non-brand, safe, and specific. Otherwise emit EXACT negatives for each irrelevant query."
 )
 
 
