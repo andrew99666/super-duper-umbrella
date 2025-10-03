@@ -33,16 +33,21 @@ from .schemas import PageContent
 
 logger = logging.getLogger(__name__)
 
-PAGE_SUMMARY_SYSTEM_PROMPT = (
-    "You analyze a landing page to infer its product/service, audience, and exclusions. "
-    "Return a concise, factual summary (bulleted), avoid marketing fluff."
+DEFAULT_PAGE_SUMMARY_SYSTEM_PROMPT = (
+    "You analyze a single landing page and produce a short, factual brief. Task: 1) Identify the product/service offered. 2) Identify the intended audience (who it’s for). 3) Identify explicit or strongly implied exclusions (who/where it’s NOT for, disqualifiers, prerequisites). 4) Optional but only if clearly stated: pricing/tier, geo coverage, hours, booking or purchase method, regulatory constraints. Rules: - Base all points ONLY on the page content and unambiguous implications. No guessing or marketing language. - If something isn’t stated, write “Not specified”. - Keep brand names as on page; don’t generalize. - Write 5–8 bullet points, max ~120 words total. - Use terse noun phrases; no salesy adjectives. Output: - Bulleted list only (no intro, no conclusion)."
 )
 
-RELEVANCY_SYSTEM_PROMPT = (
-    "You classify paid search queries as relevant vs irrelevant for a given landing page. "
-    "Be conservative. Do not block brand or near-brand terms. Prefer EXACT negatives for single clear bad "
-    "queries; PHRASE if many bad variants share a phrase. Output only JSON matching the provided schema."
+DEFAULT_RELEVANCY_SYSTEM_PROMPT = (
+    "Classify paid search queries for a given landing page and propose negatives. Definitions: - Relevant: clearly matches the offering and audience. - Irrelevant: clearly conflicts with the offering, audience, geo, prerequisites, or intent (e.g., jobs, support-only, DIY when service-only, out-of-area, competitors if LP doesn’t position against them, etc.). - Borderline/ambiguous → treat as Relevant (be conservative). - Brand/near-brand terms (brand name, site/domain, common misspellings) must NOT be marked irrelevant or negated. Negative keyword policy: - Prefer EXACT negatives for isolated one-off bad queries. - Use PHRASE negatives only when ≥3 irrelevant queries share the same non-brand phrase that safely removes a class of bad traffic. - PHRASE negatives must be 2–3 words, specific, and avoid overbroad tokens (e.g., not just “free”, “near me”). - Never generate negatives that block the brand/near-brand. - Keep all lowercase for negatives. Process (do silently; do NOT include reasoning in output): 1) For each query, decide Relevant vs Irrelevant using the LP summary’s “who it’s for” and “exclusions”. 2) Cluster irrelevant queries by shared 2–3-word phrases; promote a phrase to PHRASE negative if it appears in ≥3 queries and is non-brand, safe, and specific. Otherwise emit EXACT negatives for each irrelevant query."
 )
+
+
+def _page_summary_prompt() -> str:
+    return os.getenv("OPENAI_PAGE_SUMMARY_SYSTEM_PROMPT", DEFAULT_PAGE_SUMMARY_SYSTEM_PROMPT)
+
+
+def _relevancy_prompt() -> str:
+    return os.getenv("OPENAI_RELEVANCY_SYSTEM_PROMPT", DEFAULT_RELEVANCY_SYSTEM_PROMPT)
 
 
 class RelevancyResult(BaseModel):
@@ -110,7 +115,37 @@ def _openai_retry():
 
 
 def _model_name() -> str:
-    return os.getenv("OPENAI_MODEL", "gpt-5-nano")
+    """Return the configured OpenAI model name."""
+
+    value = os.getenv("OPENAI_MODEL", "gpt-5-nano")
+    return value.strip()
+
+
+# Models in the GPT-5 family currently ignore custom temperature values and
+# return 400 errors when one is supplied. We therefore suppress overrides for
+# those models entirely while still allowing explicit values for others.
+_temperature_warnings_issued: set[str] = set()
+
+
+def _temperature_kwargs(model: str, desired: float | None) -> dict[str, float]:
+    """Return kwargs for temperature respecting model limitations."""
+
+    if desired is None:
+        return {}
+
+    model_key = model.strip().lower()
+    normalised = model_key.replace("_", "-")
+    if normalised.startswith("gpt-5") or normalised.startswith("gpt5"):
+        if normalised not in _temperature_warnings_issued and desired != 1:
+            logger.info(
+                "Model %s ignores custom temperature; skipping override %.2f",
+                model,
+                desired,
+            )
+            _temperature_warnings_issued.add(normalised)
+        return {}
+
+    return {"temperature": desired}
 
 
 @_openai_retry()
@@ -127,13 +162,14 @@ def generate_page_summary(page: PageContent) -> str:
         "canonical_url": page.canonical_url or "",
     }
     start = time.perf_counter()
+    model = _model_name()
     response = client.chat.completions.create(
-        model=_model_name(),
-        temperature=0.2,
+        model=model,
         messages=[
-            {"role": "system", "content": PAGE_SUMMARY_SYSTEM_PROMPT},
+            {"role": "system", "content": _page_summary_prompt()},
             {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
         ],
+        **_temperature_kwargs(model, 0.2),
     )
     content = response.choices[0].message.content or ""
     logger.info(
@@ -309,14 +345,15 @@ def parse_relevancy_response(content: str) -> list[RelevancyResult]:
 @_openai_retry()
 def _call_relevancy_model(prompt: str) -> str:
     client = _get_openai_client()
+    model = _model_name()
     response = client.chat.completions.create(
-        model=_model_name(),
-        temperature=0.0,
+        model=model,
         messages=[
-            {"role": "system", "content": RELEVANCY_SYSTEM_PROMPT},
+            {"role": "system", "content": _relevancy_prompt()},
             {"role": "user", "content": prompt},
         ],
         response_format={"type": "json_object"},
+        **_temperature_kwargs(model, 0.0),
     )
     content = response.choices[0].message.content or ""
     logger.debug("LLM relevancy response: %s", content)
