@@ -61,6 +61,18 @@ DEFAULT_MAX_TERMS = int(os.getenv("OPENAI_MAX_TERMS", "1500") or 0) or 1500
 MIN_METRIC_THRESHOLD = int(os.getenv("OPENAI_MIN_IMPRESSIONS", "0") or 0)
 
 
+def _format_duration(seconds: float) -> str:
+    """Return a human friendly duration string."""
+
+    if seconds <= 0:
+        return "<1 ms"
+    if seconds < 1:
+        return f"{seconds * 1000:.0f} ms"
+    if seconds < 120:
+        return f"{seconds:.1f} s"
+    return f"{seconds / 60:.1f} min"
+
+
 def prioritise_search_terms(rows: list[SearchTermRow]) -> list[SearchTermRow]:
     """Down-select rows for LLM analysis based on performance metrics.
 
@@ -386,9 +398,25 @@ async def list_campaigns(
         .all()
     )
 
+    campaign_payload = campaigns_to_dict(campaigns)
+    for campaign in campaign_payload:
+        status = (campaign.get("status") or "").replace("_", " ").title()
+        campaign["status_label"] = status if status else "Unknown"
+
+    active_campaigns = [
+        c for c in campaign_payload if (c.get("status") or "").upper() == "ENABLED"
+    ]
+    paused_campaigns = [
+        c for c in campaign_payload if (c.get("status") or "").upper() != "ENABLED"
+    ]
+
+    active_campaigns.sort(key=lambda c: (c.get("name") or "").lower())
+    paused_campaigns.sort(key=lambda c: (c.get("name") or "").lower())
+
     context = {
         "request": request,
-        "campaigns": campaigns_to_dict(campaigns),
+        "active_campaigns": active_campaigns,
+        "paused_campaigns": paused_campaigns,
         "customers": customers,
         "selected_customer": customer_id,
         "default_start": (dt.date.today() - dt.timedelta(days=7)).isoformat(),
@@ -487,6 +515,19 @@ async def analyze(
 
     auto_select_irrelevant = auto_select == "irrelevant"
 
+    landing_duration_total = 0.0
+    search_duration_total = 0.0
+    persist_duration_total = 0.0
+    llm_duration_total = 0.0
+    total_landing_urls = 0
+    total_raw_rows = 0
+    total_aggregated_rows = 0
+    total_prioritised_rows = 0
+    total_skipped_rows = 0
+    total_llm_results = 0
+    total_llm_suggestions = 0
+    analysis_steps: list[dict[str, str]] = []
+
     campaign_records = session.execute(
         select(Campaign).where(Campaign.campaign_id.in_(campaign_ids))
     ).scalars().all()
@@ -503,23 +544,26 @@ async def analyze(
     try:
         login_header = user.login_customer_id or os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
         for customer_id, campaigns in campaigns_by_customer.items():
-            customer_timer = time.perf_counter()
             ga_campaign_ids = [campaign.campaign_id for campaign in campaigns]
             logger.info(
                 "Fetching landing pages for customer %s campaigns %s",
                 customer_id,
                 ga_campaign_ids,
             )
+            landing_start = time.perf_counter()
             landing_pages = list(
                 service.fetch_landing_pages(
                     customer_id, ga_campaign_ids, login_customer_id=login_header
                 )
             )
+            landing_elapsed = time.perf_counter() - landing_start
+            landing_duration_total += landing_elapsed
+            total_landing_urls += len(landing_pages)
             logger.info(
                 "Fetched %d landing pages for customer %s in %.2fs",
                 len(landing_pages),
                 customer_id,
-                time.perf_counter() - customer_timer,
+                landing_elapsed,
             )
             for lp in landing_pages:
                 landing_page = get_or_create_landing_page(session, lp)
@@ -543,16 +587,20 @@ async def analyze(
                     login_customer_id=login_header,
                 )
             )
+            raw_duration = time.perf_counter() - search_timer
+            search_duration_total += raw_duration
+            total_raw_rows += len(search_rows)
             logger.info(
                 "Fetched %d raw search term rows for customer %s in %.2fs",
                 len(search_rows),
                 customer_id,
-                time.perf_counter() - search_timer,
+                raw_duration,
             )
             aggregated_rows = aggregate_search_term_rows(search_rows)
             if not aggregated_rows:
                 logger.info("No search terms returned for campaigns %s", ga_campaign_ids)
                 continue
+            total_aggregated_rows += len(aggregated_rows)
             logger.info(
                 "Aggregated search terms down to %d rows for campaigns %s",
                 len(aggregated_rows),
@@ -560,6 +608,7 @@ async def analyze(
             )
             prioritised_rows = prioritise_search_terms(list(aggregated_rows))
             skipped = len(aggregated_rows) - len(prioritised_rows)
+            total_skipped_rows += max(skipped, 0)
             if skipped > 0:
                 logger.info(
                     "Skipping %d low-signal search terms (max_terms=%d, min_impressions=%d)",
@@ -567,8 +616,10 @@ async def analyze(
                     DEFAULT_MAX_TERMS,
                     MIN_METRIC_THRESHOLD,
                 )
-            persist_search_terms(session, campaigns, prioritised_rows)
-            run_llm_analysis(
+            persist_stats = persist_search_terms(session, campaigns, prioritised_rows)
+            persist_duration_total += float(persist_stats["duration"])
+            total_prioritised_rows += int(persist_stats["processed"])
+            llm_stats = run_llm_analysis(
                 session,
                 analysis_run,
                 campaigns,
@@ -576,6 +627,9 @@ async def analyze(
                 landing_page_map,
                 auto_select_irrelevant=auto_select_irrelevant,
             )
+            llm_duration_total += float(llm_stats["duration"])
+            total_llm_results += int(llm_stats["results"])
+            total_llm_suggestions += int(llm_stats["suggestions"])
     except Exception as exc:
         logger.exception("Analysis run failed: %s", exc)
         analysis_run.status = "failed"
@@ -597,12 +651,83 @@ async def analyze(
         .scalars()
         .all()
     )
+    analysis_total_seconds = time.perf_counter() - analysis_timer
     logger.info(
         "Analysis %s produced %d suggestions in %.2fs",
         analysis_run.id,
         len(suggestions),
-        time.perf_counter() - analysis_timer,
+        analysis_total_seconds,
     )
+
+    if landing_duration_total or total_landing_urls:
+        landing_detail = (
+            f"{total_landing_urls} URL{'s' if total_landing_urls != 1 else ''} prepared"
+            if total_landing_urls
+            else "Landing page summaries reused from cache"
+        )
+        analysis_steps.append(
+            {
+                "title": "Landing pages ready",
+                "detail": landing_detail,
+                "duration": _format_duration(landing_duration_total),
+                "icon": "🌐",
+            }
+        )
+    if total_raw_rows:
+        analysis_steps.append(
+            {
+                "title": "Search terms retrieved",
+                "detail": f"{total_raw_rows} rows downloaded from Google Ads",
+                "duration": _format_duration(search_duration_total),
+                "icon": "📥",
+            }
+        )
+    if total_aggregated_rows:
+        prioritised_detail = f"{total_prioritised_rows} analysed"
+        if total_skipped_rows:
+            prioritised_detail += f" · {total_skipped_rows} skipped"
+        analysis_steps.append(
+            {
+                "title": "Search terms prioritised",
+                "detail": prioritised_detail,
+                "duration": _format_duration(persist_duration_total),
+                "icon": "🧮",
+            }
+        )
+    if total_llm_results:
+        analysis_steps.append(
+            {
+                "title": "LLM scoring complete",
+                "detail": f"{total_llm_results} queries evaluated",
+                "duration": _format_duration(llm_duration_total),
+                "icon": "🤖",
+            }
+        )
+    other_duration = max(
+        analysis_total_seconds
+        - (landing_duration_total + search_duration_total + persist_duration_total + llm_duration_total),
+        0.0,
+    )
+    detail_text = (
+        f"{len(suggestions)} suggestion{'s' if len(suggestions) != 1 else ''} ready to review"
+        if suggestions
+        else "No suggestions generated for this run"
+    )
+    analysis_steps.append(
+        {
+            "title": "Review & export",
+            "detail": detail_text,
+            "duration": _format_duration(other_duration),
+            "icon": "✅",
+        }
+    )
+
+    analysis_summary = {
+        "total_time": _format_duration(analysis_total_seconds),
+        "campaign_count": len(campaign_ids),
+        "terms_scored": total_llm_results,
+        "suggestion_count": len(suggestions),
+    }
 
     context = {
         "request": request,
@@ -610,6 +735,9 @@ async def analyze(
         "analysis": analysis_run,
         "error_message": error_message,
         "user": user,
+        "analysis_steps": analysis_steps,
+        "analysis_summary": analysis_summary,
+        "confidence_default": 0.8,
     }
     return TEMPLATES.TemplateResponse("analyze.html", context)
 
@@ -669,7 +797,7 @@ def persist_search_terms(
     session: Session,
     campaigns: Iterable[Campaign],
     rows: Iterable[SearchTermRow],
-) -> None:
+) -> dict[str, float | int]:
     start = time.perf_counter()
     rows = list(rows)
     campaigns_by_id = {campaign.campaign_id: campaign for campaign in campaigns}
@@ -708,11 +836,13 @@ def persist_search_terms(
         search_term.conversions = row.conversions
         processed += 1
     session.flush()
+    duration = time.perf_counter() - start
     logger.info(
         "Persisted %d search term rows in %.2fs",
         processed,
-        time.perf_counter() - start,
+        duration,
     )
+    return {"processed": processed, "duration": duration}
 
 
 def run_llm_analysis(
@@ -722,7 +852,7 @@ def run_llm_analysis(
     rows: Iterable[SearchTermRow],
     landing_pages: Dict[str, LandingPage],
     auto_select_irrelevant: bool,
-) -> None:
+) -> dict[str, float | int]:
     start = time.perf_counter()
     rows = list(rows)
     logger.info("Running LLM analysis over %d aggregated search terms", len(rows))
@@ -730,6 +860,11 @@ def run_llm_analysis(
     grouped_terms: Dict[str, List[SearchTermRow]] = defaultdict(list)
     for row in rows:
         grouped_terms[row.campaign_id].append(row)
+
+    campaigns_processed = 0
+    results_returned = 0
+    suggestions_created = 0
+    per_campaign_durations: list[float] = []
 
     for campaign_id, term_rows in grouped_terms.items():
         logger.info(
@@ -760,11 +895,15 @@ def run_llm_analysis(
             campaign_context=f"Campaign: {campaign.name}",
             terms=term_payloads,
         )
+        llm_elapsed = time.perf_counter() - llm_start
+        per_campaign_durations.append(llm_elapsed)
+        results_returned += len(results)
+        campaigns_processed += 1
         logger.info(
             "LLM returned %d results for campaign %s in %.2fs",
             len(results),
             campaign_id,
-            time.perf_counter() - llm_start,
+            llm_elapsed,
         )
         if not results:
             logger.warning("No relevancy suggestions generated for campaign %s", campaign_id)
@@ -806,16 +945,24 @@ def run_llm_analysis(
                 approved=auto_approve,
             )
             session.add(suggestion)
+            suggestions_created += 1
             logger.debug(
                 "Recorded suggestion for term '%s' (negative=%s, confidence=%.2f)",
                 result.query,
                 result.suggest_negative,
                 result.confidence,
             )
-    logger.info(
-        "Completed LLM analysis phase in %.2fs",
-        time.perf_counter() - start,
-    )
+    total_duration = time.perf_counter() - start
+    logger.info("Completed LLM analysis phase in %.2fs", total_duration)
+    return {
+        "duration": total_duration,
+        "campaigns": campaigns_processed,
+        "results": results_returned,
+        "suggestions": suggestions_created,
+        "average_campaign_duration": (sum(per_campaign_durations) / len(per_campaign_durations))
+        if per_campaign_durations
+        else 0.0,
+    }
 
 
 @app.post("/suggestions/{suggestion_id}/toggle")

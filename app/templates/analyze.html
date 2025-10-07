@@ -3,26 +3,76 @@
   {{ error_message }}
 </div>
 {% endif %}
-{% if suggestions %}
-<div class="bg-white shadow-sm rounded-lg p-6">
-  <div class="flex items-center justify-between mb-4">
+
+{% if analysis_summary %}
+<div class="glass-panel rounded-2xl border border-white/70 p-6 app-card">
+  <div class="flex flex-wrap gap-6 items-center justify-between">
     <div>
-      <h2 class="text-xl font-semibold text-slate-800">LLM suggestions</h2>
-      <p class="text-sm text-slate-500">
-        Review the recommendations, adjust selections, and export as CSV or apply via the API.
-      </p>
+      <h2 class="text-xl font-semibold text-slate-900">Analysis summary</h2>
+      <p class="text-sm text-slate-500">{{ analysis_summary.campaign_count }} campaign{{ 's' if analysis_summary.campaign_count != 1 else '' }} reviewed in {{ analysis_summary.total_time }}.</p>
     </div>
-    <div class="flex items-center gap-3">
+    <div class="flex flex-wrap gap-4 text-sm">
+      <div class="bg-white/85 border border-slate-200 rounded-xl px-4 py-3">
+        <p class="text-xs text-slate-500 uppercase tracking-wide">Terms scored</p>
+        <p class="text-lg font-semibold text-slate-800">{{ analysis_summary.terms_scored }}</p>
+      </div>
+      <div class="bg-white/85 border border-slate-200 rounded-xl px-4 py-3">
+        <p class="text-xs text-slate-500 uppercase tracking-wide">Suggestions</p>
+        <p class="text-lg font-semibold text-slate-800">{{ analysis_summary.suggestion_count }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if analysis_steps %}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+  {% for step in analysis_steps %}
+  <div class="glass-panel rounded-2xl border border-slate-200/70 px-4 py-4 bg-white/90">
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex items-center gap-2 text-slate-700">
+        <span class="text-lg">{{ step.icon }}</span>
+        <h3 class="font-semibold">{{ step.title }}</h3>
+      </div>
+      <span class="text-xs font-medium text-slate-500">{{ step.duration }}</span>
+    </div>
+    <p class="mt-2 text-sm text-slate-600">{{ step.detail }}</p>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if suggestions %}
+<div class="glass-panel rounded-2xl border border-white/70 p-6 space-y-6 app-card">
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div>
+      <h2 class="text-xl font-semibold text-slate-900">LLM suggestions</h2>
+      <p class="text-sm text-slate-500">Tune the confidence threshold, approve entries, and export the curated list.</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+      <label for="confidence-threshold" class="flex items-center gap-2">
+        <span class="font-medium text-slate-700">Confidence</span>
+        <input
+          type="range"
+          id="confidence-threshold"
+          min="0"
+          max="1"
+          step="0.05"
+          value="{{ '%.2f'|format(confidence_default) }}"
+          class="w-32 accent-blue-600"
+        />
+        <span id="confidence-value" class="font-semibold text-slate-800">{{ '%.2f'|format(confidence_default) }}</span>
+      </label>
       <button
         type="button"
-        id="select-high-confidence"
-        class="px-3 py-1.5 border border-blue-200 text-blue-600 rounded-md text-sm"
+        id="apply-threshold"
+        class="px-3 py-1.5 border border-blue-200 text-blue-600 rounded-md"
       >
-        Select irrelevants ≥ 0.8
+        Select negatives ≥ threshold
       </button>
       <a
         href="/export"
-        class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm"
+        class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
         >Export CSV</a
       >
     </div>
@@ -85,7 +135,7 @@
       </tbody>
     </table>
   </div>
-  <div class="mt-6 flex items-center gap-3">
+  <div class="mt-6 flex items-start gap-3">
     <form method="post" action="/apply-negatives">
       <button
         type="submit"
@@ -104,20 +154,49 @@
 {% endif %}
 
 <script>
-  const bulkButton = document.getElementById("select-high-confidence");
-  if (bulkButton) {
-    bulkButton.addEventListener("click", () => {
-      document.querySelectorAll("#suggestion-table-body tr").forEach((row) => {
-        const negative = row.dataset.negative === "true";
-        const confidence = parseFloat(row.dataset.confidence || "0");
-        if (negative && confidence >= 0.8) {
-          const checkbox = row.querySelector("input[type='checkbox']");
-          if (checkbox && !checkbox.checked) {
-            checkbox.checked = true;
-            checkbox.dispatchEvent(new Event("change"));
-          }
-        }
-      });
+  const thresholdInput = document.getElementById("confidence-threshold");
+  const thresholdLabel = document.getElementById("confidence-value");
+  const applyThresholdButton = document.getElementById("apply-threshold");
+  const suggestionRows = document.querySelectorAll("#suggestion-table-body tr");
+
+  const formatValue = (value) => Number.parseFloat(value || 0).toFixed(2);
+
+  function updateHighlights() {
+    if (!thresholdInput || !thresholdLabel) return;
+    const threshold = Number.parseFloat(thresholdInput.value || {{ '%.2f'|format(confidence_default) }});
+    thresholdLabel.textContent = formatValue(threshold);
+    suggestionRows.forEach((row) => {
+      const negative = row.dataset.negative === "true";
+      const confidence = Number.parseFloat(row.dataset.confidence || "0");
+      const highlight = negative && confidence >= threshold;
+      row.classList.toggle("bg-rose-50", highlight);
+      row.classList.toggle("ring-1", highlight);
+      row.classList.toggle("ring-rose-200", highlight);
     });
   }
+
+  if (thresholdInput) {
+    thresholdInput.addEventListener("input", updateHighlights);
+  }
+
+  if (applyThresholdButton) {
+    applyThresholdButton.addEventListener("click", () => {
+      const threshold = Number.parseFloat(thresholdInput?.value || {{ '%.2f'|format(confidence_default) }});
+      suggestionRows.forEach((row) => {
+        const negative = row.dataset.negative === "true";
+        const confidence = Number.parseFloat(row.dataset.confidence || "0");
+        if (!negative || confidence < threshold) {
+          return;
+        }
+        const checkbox = row.querySelector("input[type='checkbox']");
+        if (checkbox && !checkbox.checked) {
+          checkbox.checked = true;
+          checkbox.dispatchEvent(new Event("change"));
+        }
+      });
+      updateHighlights();
+    });
+  }
+
+  updateHighlights();
 </script>
