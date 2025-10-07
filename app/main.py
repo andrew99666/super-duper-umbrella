@@ -403,20 +403,29 @@ async def list_campaigns(
         status = (campaign.get("status") or "").replace("_", " ").title()
         campaign["status_label"] = status if status else "Unknown"
 
-    active_campaigns = [
-        c for c in campaign_payload if (c.get("status") or "").upper() == "ENABLED"
-    ]
-    paused_campaigns = [
-        c for c in campaign_payload if (c.get("status") or "").upper() != "ENABLED"
-    ]
+    active_campaigns: list[dict[str, str | None]] = []
+    paused_campaigns: list[dict[str, str | None]] = []
+    archived_campaigns: list[dict[str, str | None]] = []
 
-    active_campaigns.sort(key=lambda c: (c.get("name") or "").lower())
-    paused_campaigns.sort(key=lambda c: (c.get("name") or "").lower())
+    for campaign in campaign_payload:
+        status_value = (campaign.get("status") or "").upper()
+        if status_value == "ENABLED":
+            active_campaigns.append(campaign)
+        elif status_value in {"PAUSED", "PENDING"}:
+            paused_campaigns.append(campaign)
+        else:
+            archived_campaigns.append(campaign)
+
+    sort_key = lambda c: (c.get("name") or "").lower()
+    active_campaigns.sort(key=sort_key)
+    paused_campaigns.sort(key=sort_key)
+    archived_campaigns.sort(key=sort_key)
 
     context = {
         "request": request,
         "active_campaigns": active_campaigns,
         "paused_campaigns": paused_campaigns,
+        "archived_campaigns": archived_campaigns,
         "customers": customers,
         "selected_customer": customer_id,
         "default_start": (dt.date.today() - dt.timedelta(days=7)).isoformat(),
