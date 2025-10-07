@@ -75,4 +75,8 @@ def test_temperature_kwargs_respects_model_defaults():
     kwargs_variant = llm._temperature_kwargs("GPT-5-preview", 0.0)
     assert kwargs_variant == {}
 
+    # Whitespace variants should still be detected as GPT-5 models
+    kwargs_spaced = llm._temperature_kwargs("  gpt 5-nano  ", 0.0)
+    assert kwargs_spaced == {}
+
     llm._temperature_warnings_issued.clear()
