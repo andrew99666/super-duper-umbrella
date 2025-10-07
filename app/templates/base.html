@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}Search Term Relevancy Assistant{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-gH1jvRjjXNMTvEihQ/HUkNzxaz2YsmiVjCwXTlzAIXazhbugzuDUFc1l1YieYdGf" crossorigin="anonymous"></script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.4/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        background: radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 55%),
+          radial-gradient(circle at bottom, rgba(14, 165, 233, 0.1), transparent 50%);
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .app-card {
+        box-shadow: 0 20px 45px -30px rgba(30, 64, 175, 0.45);
+      }
+      .htmx-indicator {
+        display: none;
+      }
+      .htmx-request .htmx-indicator {
+        display: flex;
+      }
+      .glass-panel {
+        backdrop-filter: blur(12px);
+        background: rgba(255, 255, 255, 0.78);
+      }
+    </style>
+  </head>
+  <body class="min-h-screen text-slate-700">
+    <nav class="glass-panel border-b border-white/60 shadow-sm">
+      <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+        <a href="/" class="text-xl font-semibold text-slate-800">Search Term Relevancy Assistant</a>
+        <div class="flex items-center gap-4 text-sm text-slate-600">
+          {% if user %}
+          <span class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>Connected</span>
+          <a href="/logout" class="text-blue-600 hover:text-blue-800">Logout</a>
+          {% else %}
+          <a href="/auth/google" class="text-blue-600 hover:text-blue-800">Sign in with Google</a>
+          {% endif %}
+        </div>
+      </div>
+    </nav>
+    <main class="max-w-6xl mx-auto px-4 py-10 space-y-6">
+      {% block content %}{% endblock %}
+    </main>
+    <div
+      id="global-indicator"
+      class="htmx-indicator fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/35 backdrop-blur-sm"
+    >
+      <div class="bg-white/95 rounded-xl px-6 py-4 shadow-lg flex items-center gap-4">
+        <div class="relative">
+          <span class="absolute inset-0 rounded-full bg-blue-200 animate-ping"></span>
+          <span class="relative inline-flex h-3 w-3 rounded-full bg-blue-500"></span>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-slate-700">Running analysis…</p>
+          <p class="text-xs text-slate-500">Fetching Google Ads data and scoring search terms.</p>
+        </div>
+      </div>
+    </div>
+    {% block scripts %}{% endblock %}
+    <script>
+      document.body.addEventListener("htmx:beforeRequest", (event) => {
+        if (event.target && event.target.id === "analysis-form") {
+          const panel = document.getElementById("analysis-status-panel");
+          const text = document.querySelector("[data-status-text]");
+          if (panel && text) {
+            panel.classList.remove("hidden");
+            text.textContent = "Gathering Google Ads data…";
+          }
+        }
+      });
+      document.body.addEventListener("htmx:afterSwap", (event) => {
+        if (event.target && event.target.id === "analysis-form") {
+          const panel = document.getElementById("analysis-status-panel");
+          if (panel) {
+            panel.classList.add("hidden");
+          }
+        }
+      });
+      document.body.addEventListener("htmx:responseError", (event) => {
+        if (event.target && event.target.id === "analysis-form") {
+          const panel = document.getElementById("analysis-status-panel");
+          const text = document.querySelector("[data-status-text]");
+          if (panel && text) {
+            panel.classList.remove("hidden");
+            text.textContent = "Something went wrong. Please try again.";
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

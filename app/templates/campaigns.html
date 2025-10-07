@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="space-y-6">
+  <div class="glass-panel rounded-2xl border border-white/70 p-8 app-card">
+    <div class="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold text-slate-900">Campaign workspace</h1>
+        <p class="text-sm text-slate-500">Select campaigns and a date range to analyse search term relevancy.</p>
+      </div>
+      <form method="get" action="/campaigns" class="flex items-center gap-2 bg-white/80 border border-slate-200 rounded-lg px-3 py-2 shadow-sm">
+        <label for="customer_id" class="text-xs font-medium text-slate-500">Account</label>
+        <select
+          id="customer_id"
+          name="customer_id"
+          class="bg-transparent text-sm text-slate-700 focus:outline-none"
+          onchange="this.form.submit()"
+        >
+          {% for customer in customers %}
+          <option value="{{ customer.customer_id }}" {% if customer.customer_id == selected_customer %}selected{% endif %}>
+            {{ customer.descriptive_name or customer.customer_id }}
+          </option>
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6 text-sm">
+      <div class="bg-white/80 border border-slate-200 rounded-xl px-4 py-3">
+        <p class="text-xs text-slate-500 uppercase tracking-wide">Active campaigns</p>
+        <p class="text-xl font-semibold text-slate-800">{{ active_campaigns|length }}</p>
+      </div>
+      <div class="bg-white/80 border border-slate-200 rounded-xl px-4 py-3">
+        <p class="text-xs text-slate-500 uppercase tracking-wide">Paused / other</p>
+        <p class="text-xl font-semibold text-slate-800">{{ paused_campaigns|length }}</p>
+      </div>
+      <div class="bg-white/80 border border-slate-200 rounded-xl px-4 py-3">
+        <p class="text-xs text-slate-500 uppercase tracking-wide">Default window</p>
+        <p class="text-xl font-semibold text-slate-800">Last 7 days</p>
+      </div>
+    </div>
+  </div>
+
+  <form
+    id="analysis-form"
+    class="glass-panel rounded-2xl border border-white/70 p-8 space-y-8 app-card"
+    method="post"
+    action="/analyze"
+    hx-post="/analyze"
+    hx-trigger="submit"
+    hx-target="#analysis-results"
+    hx-swap="innerHTML"
+    hx-indicator="#global-indicator"
+  >
+    <input type="hidden" name="customer_id" value="{{ selected_customer }}" />
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <label class="flex flex-col text-sm text-slate-600">
+        <span class="font-medium text-slate-700">Start date</span>
+        <input
+          type="date"
+          name="start_date"
+          required
+          value="{{ default_start }}"
+          class="mt-2 border border-slate-200 rounded-lg px-3 py-2 bg-white/90 focus:border-blue-400 focus:outline-none"
+        />
+      </label>
+      <label class="flex flex-col text-sm text-slate-600">
+        <span class="font-medium text-slate-700">End date</span>
+        <input
+          type="date"
+          name="end_date"
+          required
+          value="{{ default_end }}"
+          class="mt-2 border border-slate-200 rounded-lg px-3 py-2 bg-white/90 focus:border-blue-400 focus:outline-none"
+        />
+      </label>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-medium text-slate-800">Active campaigns</h2>
+          <span class="text-xs text-slate-400">{{ active_campaigns|length }} available</span>
+        </div>
+        {% if active_campaigns %}
+        <div class="space-y-2" id="active-campaigns">
+          {% for campaign in active_campaigns %}
+          <label class="flex items-start gap-3 border border-slate-200 hover:border-blue-300 transition rounded-xl px-4 py-3 bg-white/90">
+            <input
+              type="checkbox"
+              name="campaign_ids"
+              value="{{ campaign.campaign_id }}"
+              class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-slate-800">{{ campaign.name }}</span>
+              <span class="block text-xs text-slate-500">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm text-slate-500">No active campaigns for this account.</p>
+        {% endif %}
+      </div>
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-medium text-slate-800">Paused or limited</h2>
+          <span class="text-xs text-slate-400">{{ paused_campaigns|length }} available</span>
+        </div>
+        {% if paused_campaigns %}
+        <div class="space-y-2" id="paused-campaigns">
+          {% for campaign in paused_campaigns %}
+          <label class="flex items-start gap-3 border border-slate-200 hover:border-blue-300 transition rounded-xl px-4 py-3 bg-white/70">
+            <input
+              type="checkbox"
+              name="campaign_ids"
+              value="{{ campaign.campaign_id }}"
+              class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-slate-800">{{ campaign.name }}</span>
+              <span class="block text-xs text-slate-500">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm text-slate-500">No paused campaigns detected.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <label class="flex items-center gap-2 text-sm text-slate-600">
+        <input type="checkbox" name="auto_select" value="irrelevant" class="h-4 w-4" checked />
+        Auto-select obvious negatives (confidence ≥ 0.8)
+      </label>
+      <button
+        type="submit"
+        class="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l6-6 4 4 6-6" />
+        </svg>
+        Run analysis
+      </button>
+    </div>
+  </form>
+
+  <div
+    id="analysis-status-panel"
+    class="hidden glass-panel rounded-2xl border border-blue-100 px-5 py-4 flex items-start gap-3 text-sm text-blue-700"
+  >
+    <span class="mt-1 h-2.5 w-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+    <div>
+      <p class="font-semibold" data-status-text>Preparing analysis…</p>
+      <p class="text-xs text-blue-600">Hang tight—this usually takes under a minute.</p>
+    </div>
+  </div>
+
+  <div id="analysis-results"></div>
+</section>
+{% endblock %}
