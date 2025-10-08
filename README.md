@@ -41,6 +41,7 @@ Copy `.env.example` to `.env` and populate the following:
 ```env
 APP_SECRET_KEY=replace-with-a-long-random-string
 BASE_URL=http://localhost:8000
+APP_HOST_PORT=8000
 DATABASE_URL=sqlite:///./data/app.db
 GOOGLE_ADS_DEVELOPER_TOKEN=your_dev_token
 GOOGLE_ADS_OAUTH_CLIENT_ID=your_oauth_client_id
@@ -80,8 +81,10 @@ mkdir -p data  # use `mkdir data` on Windows PowerShell
 docker compose up --build
 ```
 
-The application will be available at <http://localhost:8000> by default. Uvicorn runs with a single worker
-inside the container. File changes in `app/` are mounted into the container for rapid iteration.
+The application will be available at <http://localhost:8000> by default. If port 8000 is in use locally, set
+`APP_HOST_PORT` in `.env` (for example, `APP_HOST_PORT=8080`) before running `docker compose` to choose a different
+host port. Uvicorn runs with a single worker inside the container. File changes in `app/` are mounted into the
+container for rapid iteration.
 
 ## Usage workflow
 
