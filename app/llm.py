@@ -200,11 +200,11 @@ def _max_parallel_requests() -> int:
     The limit is derived from the optional ``OPENAI_MAX_CONCURRENT_REQUESTS``
     environment variable. To honour the user's request to stay 15%% below the
     advertised cap we multiply the configured maximum by 0.85. When the value
-    is unset or invalid we assume a generous limit of 60 concurrent calls,
-    yielding 51 workers after the reduction.
+    is unset or invalid we assume a generous limit of 120 concurrent calls,
+    yielding 102 workers after the reduction.
     """
 
-    default_limit = 60
+    default_limit = 120
     raw = os.getenv("OPENAI_MAX_CONCURRENT_REQUESTS")
     if not raw:
         configured = default_limit
@@ -225,7 +225,7 @@ def _max_parallel_requests() -> int:
 
 
 def _relevancy_chunk_size() -> int:
-    default_size = 80
+    default_size = 50
     raw = os.getenv("OPENAI_RELEVANCY_CHUNK_SIZE")
     if not raw:
         return default_size
