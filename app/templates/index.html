@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="glass-panel rounded-2xl p-10 border border-white/60 app-card">
+  <div class="grid gap-8 md:grid-cols-[2fr,3fr] items-center">
+    <div class="space-y-6">
+      <h1 class="text-3xl md:text-4xl font-semibold text-slate-900 leading-tight">
+        Smarter negative keywords, faster campaign decisions.
+      </h1>
+      <p class="text-slate-600">
+        Pull the latest search term data from Google Ads, understand the landing pages your
+        customers see, and let GPT analyse relevancy so you can act with confidence.
+      </p>
+      <ul class="space-y-3 text-sm text-slate-600">
+        <li class="flex items-start gap-3">
+          <span class="mt-1 h-2.5 w-2.5 rounded-full bg-blue-500"></span>
+          <span>OAuth-secured Google Ads integration with campaign and landing page insights.</span>
+        </li>
+        <li class="flex items-start gap-3">
+          <span class="mt-1 h-2.5 w-2.5 rounded-full bg-blue-500"></span>
+          <span>OpenAI-powered summarisation and relevancy scoring tuned for paid search workflows.</span>
+        </li>
+        <li class="flex items-start gap-3">
+          <span class="mt-1 h-2.5 w-2.5 rounded-full bg-blue-500"></span>
+          <span>Approve, export, or apply negative keywords with a few clicks.</span>
+        </li>
+      </ul>
+      {% if user %}
+      <a
+        href="/campaigns"
+        class="inline-flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm"
+      >
+        <span>Open campaign workspace</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5l7 7-7 7" />
+        </svg>
+      </a>
+      {% else %}
+      <a
+        href="/auth/google"
+        class="inline-flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm"
+      >
+        <span>Connect Google Ads</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5l7 7-7 7" />
+        </svg>
+      </a>
+      {% endif %}
+    </div>
+    <div class="bg-white/90 border border-slate-100 rounded-2xl p-6 shadow-inner">
+      <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">Workflow snapshot</h2>
+      <ol class="space-y-4 text-sm text-slate-600">
+        <li class="flex gap-3">
+          <span class="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-blue-600 font-medium">1</span>
+          <div>
+            <p class="font-medium text-slate-700">Select campaigns</p>
+            <p>Pick accounts, campaigns, and the date range you want to investigate.</p>
+          </div>
+        </li>
+        <li class="flex gap-3">
+          <span class="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-blue-600 font-medium">2</span>
+          <div>
+            <p class="font-medium text-slate-700">Analyse landing pages</p>
+            <p>We summarise final URLs and fetch search terms—including PMax visibility—automatically.</p>
+          </div>
+        </li>
+        <li class="flex gap-3">
+          <span class="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-blue-600 font-medium">3</span>
+          <div>
+            <p class="font-medium text-slate-700">Review suggestions</p>
+            <p>Approve, adjust confidence thresholds, and export the negative keyword list.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </div>
+</section>
+{% endblock %}
