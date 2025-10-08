@@ -48,7 +48,7 @@ GOOGLE_ADS_OAUTH_CLIENT_SECRET=your_oauth_client_secret
 GOOGLE_ADS_API_VERSION=
 GOOGLE_ADS_LOGIN_CUSTOMER_ID=optional_manager_id
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-5-nano
+OPENAI_MODEL=gpt-5-mini
 OPENAI_PAGE_SUMMARY_SYSTEM_PROMPT="You analyze a landing page to infer its product/service, audience, and exclusions. Return a concise, factual summary (bulleted), avoid marketing fluff."
 OPENAI_RELEVANCY_SYSTEM_PROMPT="You classify paid search queries as relevant vs irrelevant for a given landing page. Be conservative. Do not block brand or near-brand terms. Prefer EXACT negatives for single clear bad queries; PHRASE if many bad variants share a phrase. Output only JSON matching the provided schema."
 OPENAI_MAX_CONCURRENT_REQUESTS=
@@ -61,7 +61,7 @@ FEATURE_APPLY_NEGATIVES=false
 Leave `GOOGLE_ADS_API_VERSION` empty to use the latest version supported by the installed `google-ads` library.
 Only set it (for example, `v21`) if Google retires the default and you need to pin to a specific release.
 
-OpenAI calls default to the `gpt-5-nano` chat model. Override the model by setting `OPENAI_MODEL`, adjust
+OpenAI calls default to the `gpt-5-mini` chat model. Override the model by setting `OPENAI_MODEL`, adjust
 parallelism with `OPENAI_MAX_CONCURRENT_REQUESTS` (default 120 before the 15% safety margin), and tune batch
 size via `OPENAI_RELEVANCY_CHUNK_SIZE`. The entire GPT-5 family ignores custom temperature values, so the app
 automatically skips sending that parameter while still honouring overrides for other models. Both system

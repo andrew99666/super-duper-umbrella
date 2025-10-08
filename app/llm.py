@@ -121,7 +121,7 @@ def _openai_retry():
 def _model_name() -> str:
     """Return the configured OpenAI model name."""
 
-    value = os.getenv("OPENAI_MODEL", "gpt-5-nano")
+    value = os.getenv("OPENAI_MODEL", "gpt-5-mini")
     return value.strip()
 
 
