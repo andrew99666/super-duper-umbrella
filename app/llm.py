@@ -286,8 +286,12 @@ def _analyse_chunk_with_fallback(
         return []
 
     mid = max(1, len(chunk) // 2)
-    left = _analyse_chunk_with_fallback(page_summary, campaign_context, chunk[:mid])
-    right = _analyse_chunk_with_fallback(page_summary, campaign_context, chunk[mid:])
+    # Parallelize the recursive fallback to avoid sequential processing bottleneck
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        left_future = executor.submit(_analyse_chunk_with_fallback, page_summary, campaign_context, chunk[:mid])
+        right_future = executor.submit(_analyse_chunk_with_fallback, page_summary, campaign_context, chunk[mid:])
+        left = left_future.result()
+        right = right_future.result()
     return left + right
 
 

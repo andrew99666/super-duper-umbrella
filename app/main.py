@@ -888,35 +888,125 @@ def run_llm_analysis(
         campaign = campaigns_by_id.get(campaign_id)
         if not campaign:
             continue
-        term_payloads = [
-            {
-                "query": r.search_term,
-                "impressions": r.impressions,
-                "clicks": r.clicks,
-                "cost_micros": r.cost_micros,
-                "conversions": r.conversions,
-            }
-            for r in term_rows
-        ]
-        llm_start = time.perf_counter()
-        results = analyze_search_terms(
-            page_summary=landing_page.summary,
-            campaign_context=f"Campaign: {campaign.name}",
-            terms=term_payloads,
-        )
-        llm_elapsed = time.perf_counter() - llm_start
-        per_campaign_durations.append(llm_elapsed)
-        results_returned += len(results)
-        campaigns_processed += 1
+
+        # Check for cached analyses (within last 7 days with same landing page)
+        cache_cutoff = dt.datetime.utcnow() - dt.timedelta(days=7)
+        cached_analyses: Dict[str, SearchTermAnalysis] = {}
+        terms_needing_analysis: List[SearchTermRow] = []
+
+        for row in term_rows:
+            existing_search_term = session.execute(
+                select(SearchTerm)
+                .where(SearchTerm.campaign_id == campaign.id)
+                .where(SearchTerm.term == row.search_term)
+            ).scalars().first()
+
+            if existing_search_term:
+                recent_analysis = session.execute(
+                    select(SearchTermAnalysis)
+                    .where(SearchTermAnalysis.search_term_id == existing_search_term.id)
+                    .where(SearchTermAnalysis.landing_page_id == landing_page.id)
+                    .where(SearchTermAnalysis.created_at >= cache_cutoff)
+                    .order_by(SearchTermAnalysis.created_at.desc())
+                ).scalars().first()
+
+                if recent_analysis:
+                    cached_analyses[row.search_term] = recent_analysis
+                    logger.debug("Using cached analysis for term '%s'", row.search_term)
+                    continue
+
+            terms_needing_analysis.append(row)
+
         logger.info(
-            "LLM returned %d results for campaign %s in %.2fs",
-            len(results),
-            campaign_id,
-            llm_elapsed,
+            "Found %d cached analyses, %d terms need fresh analysis",
+            len(cached_analyses),
+            len(terms_needing_analysis),
         )
-        if not results:
+
+        # Only call LLM for terms without recent cached analyses
+        results = []
+        if terms_needing_analysis:
+            term_payloads = [
+                {
+                    "query": r.search_term,
+                    "impressions": r.impressions,
+                    "clicks": r.clicks,
+                    "cost_micros": r.cost_micros,
+                    "conversions": r.conversions,
+                }
+                for r in terms_needing_analysis
+            ]
+            llm_start = time.perf_counter()
+            results = analyze_search_terms(
+                page_summary=landing_page.summary,
+                campaign_context=f"Campaign: {campaign.name}",
+                terms=term_payloads,
+            )
+            llm_elapsed = time.perf_counter() - llm_start
+            per_campaign_durations.append(llm_elapsed)
+            logger.info(
+                "LLM returned %d results for campaign %s in %.2fs",
+                len(results),
+                campaign_id,
+                llm_elapsed,
+            )
+
+        results_returned += len(results) + len(cached_analyses)
+        campaigns_processed += 1
+
+        if not results and not cached_analyses:
             logger.warning("No relevancy suggestions generated for campaign %s", campaign_id)
             continue
+
+        # Process cached analyses by creating new references to them in this run
+        for term, cached_analysis in cached_analyses.items():
+            # Create a new analysis record linked to this run (reusing cached LLM results)
+            existing_term = session.execute(
+                select(SearchTerm)
+                .where(SearchTerm.campaign_id == campaign.id)
+                .where(SearchTerm.term == term)
+                .order_by(SearchTerm.id.desc())
+            ).scalars().first()
+            if not existing_term:
+                existing_term = SearchTerm(campaign=campaign, term=term)
+                session.add(existing_term)
+
+            analysis = SearchTermAnalysis(
+                search_term=existing_term,
+                landing_page=landing_page,
+                analysis_run=analysis_run,
+                relevancy_label=cached_analysis.relevancy_label,
+                reason=cached_analysis.reason,
+                confidence=cached_analysis.confidence,
+                suggest_negative=cached_analysis.suggest_negative,
+                suggested_match_type=cached_analysis.suggested_match_type,
+                raw_response=cached_analysis.raw_response,
+            )
+            session.add(analysis)
+            auto_approve = (
+                auto_select_irrelevant
+                and cached_analysis.suggest_negative
+                and (cached_analysis.confidence or 0) >= 0.8
+            )
+            match_type_rationale = ""
+            if cached_analysis.raw_response and isinstance(cached_analysis.raw_response, dict):
+                match_type_rationale = cached_analysis.raw_response.get("match_type_rationale", "")
+            suggestion = Suggestion(
+                analysis=analysis,
+                scope="campaign",
+                rationale=match_type_rationale,
+                approved=auto_approve,
+            )
+            session.add(suggestion)
+            suggestions_created += 1
+            logger.debug(
+                "Reused cached analysis for term '%s' (negative=%s, confidence=%.2f)",
+                term,
+                cached_analysis.suggest_negative,
+                cached_analysis.confidence or 0.0,
+            )
+
+        # Process fresh LLM results
         for result in results:
             existing_term = session.execute(
                 select(SearchTerm)
