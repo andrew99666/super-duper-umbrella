@@ -1000,6 +1000,7 @@ def run_llm_analysis(
             if not existing_term:
                 existing_term = SearchTerm(campaign=campaign, term=term)
                 session.add(existing_term)
+                session.flush()  # Flush to get ID and avoid duplicates
                 terms_by_string[term] = existing_term
 
             analysis = SearchTermAnalysis(

@@ -1,6 +1,7 @@
 """OpenAI client helpers for landing page summarisation and relevancy scoring."""
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import threading
@@ -35,8 +36,12 @@ from .schemas import PageContent
 logger = logging.getLogger(__name__)
 
 # Module-level shared thread pool for recursive fallback processing
-_FALLBACK_EXECUTOR = ThreadPoolExecutor(max_workers=2)
+# Use a larger pool to prevent deadlocks during recursive analysis
+_FALLBACK_EXECUTOR = ThreadPoolExecutor(max_workers=10)
 _MAX_RECURSION_DEPTH = 10
+
+# Register shutdown hook to ensure proper cleanup
+atexit.register(_FALLBACK_EXECUTOR.shutdown, wait=False)
 
 DEFAULT_PAGE_SUMMARY_SYSTEM_PROMPT = (
     "You analyze a landing page to infer its product/service, audience, and exclusions. "
