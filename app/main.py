@@ -647,7 +647,7 @@ async def analyze(
         error_message = "Analysis failed. Please check logs for details."
     else:
         analysis_run.status = "completed"
-        analysis_run.completed_at = dt.datetime.utcnow()
+        analysis_run.completed_at = dt.datetime.now(dt.timezone.utc)
         session.add(analysis_run)
 
     session.flush()
@@ -757,7 +757,7 @@ def get_or_create_landing_page(session: Session, row: LandingPageRow) -> Landing
     existing = session.execute(
         select(LandingPage).where(LandingPage.url == url)
     ).scalar_one_or_none()
-    now = dt.datetime.utcnow()
+    now = dt.datetime.now(dt.timezone.utc)
     if existing:
         landing_page = existing
         needs_refresh = (
@@ -854,6 +854,23 @@ def persist_search_terms(
     return {"processed": processed, "duration": duration}
 
 
+def get_or_create_search_term(session: Session, campaign: Campaign, term_string: str) -> SearchTerm:
+    """Get existing search term or create a new one."""
+    existing = session.execute(
+        select(SearchTerm)
+        .where(SearchTerm.campaign_id == campaign.id)
+        .where(SearchTerm.term == term_string)
+        .order_by(SearchTerm.id.desc())
+    ).scalars().first()
+
+    if existing:
+        return existing
+
+    new_term = SearchTerm(campaign=campaign, term=term_string)
+    session.add(new_term)
+    return new_term
+
+
 def run_llm_analysis(
     session: Session,
     analysis_run: AnalysisRun,
@@ -890,32 +907,49 @@ def run_llm_analysis(
             continue
 
         # Check for cached analyses (within last 7 days with same landing page)
-        cache_cutoff = dt.datetime.utcnow() - dt.timedelta(days=7)
+        cache_cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
         cached_analyses: Dict[str, SearchTermAnalysis] = {}
         terms_needing_analysis: List[SearchTermRow] = []
 
-        for row in term_rows:
-            existing_search_term = session.execute(
-                select(SearchTerm)
-                .where(SearchTerm.campaign_id == campaign.id)
-                .where(SearchTerm.term == row.search_term)
-            ).scalars().first()
+        # Batch fetch all existing terms for this campaign at once
+        term_strings = [row.search_term for row in term_rows]
+        existing_terms = session.execute(
+            select(SearchTerm)
+            .where(SearchTerm.campaign_id == campaign.id)
+            .where(SearchTerm.term.in_(term_strings))
+        ).scalars().all()
 
-            if existing_search_term:
-                recent_analysis = session.execute(
-                    select(SearchTermAnalysis)
-                    .where(SearchTermAnalysis.search_term_id == existing_search_term.id)
-                    .where(SearchTermAnalysis.landing_page_id == landing_page.id)
-                    .where(SearchTermAnalysis.created_at >= cache_cutoff)
-                    .order_by(SearchTermAnalysis.created_at.desc())
-                ).scalars().first()
+        # Create lookup dict
+        terms_by_string = {term.term: term for term in existing_terms}
 
-                if recent_analysis:
-                    cached_analyses[row.search_term] = recent_analysis
+        # Fetch all recent analyses for these terms at once
+        term_ids = [term.id for term in existing_terms]
+        if term_ids:
+            recent_analyses = session.execute(
+                select(SearchTermAnalysis)
+                .where(SearchTermAnalysis.search_term_id.in_(term_ids))
+                .where(SearchTermAnalysis.landing_page_id == landing_page.id)
+                .where(SearchTermAnalysis.created_at >= cache_cutoff)
+                .order_by(SearchTermAnalysis.search_term_id, SearchTermAnalysis.created_at.desc())
+            ).scalars().all()
+
+            # Build cache lookup (keep most recent per term)
+            analyses_by_term_id = {}
+            for analysis in recent_analyses:
+                if analysis.search_term_id not in analyses_by_term_id:
+                    analyses_by_term_id[analysis.search_term_id] = analysis
+
+            # Map back to term strings
+            for row in term_rows:
+                existing_term = terms_by_string.get(row.search_term)
+                if existing_term and existing_term.id in analyses_by_term_id:
+                    cached_analyses[row.search_term] = analyses_by_term_id[existing_term.id]
                     logger.debug("Using cached analysis for term '%s'", row.search_term)
-                    continue
-
-            terms_needing_analysis.append(row)
+                else:
+                    terms_needing_analysis.append(row)
+        else:
+            # No existing terms, all need analysis
+            terms_needing_analysis = list(term_rows)
 
         logger.info(
             "Found %d cached analyses, %d terms need fresh analysis",
@@ -961,15 +995,12 @@ def run_llm_analysis(
         # Process cached analyses by creating new references to them in this run
         for term, cached_analysis in cached_analyses.items():
             # Create a new analysis record linked to this run (reusing cached LLM results)
-            existing_term = session.execute(
-                select(SearchTerm)
-                .where(SearchTerm.campaign_id == campaign.id)
-                .where(SearchTerm.term == term)
-                .order_by(SearchTerm.id.desc())
-            ).scalars().first()
+            # Reuse the term from terms_by_string lookup to avoid duplicate query
+            existing_term = terms_by_string.get(term)
             if not existing_term:
                 existing_term = SearchTerm(campaign=campaign, term=term)
                 session.add(existing_term)
+                terms_by_string[term] = existing_term
 
             analysis = SearchTermAnalysis(
                 search_term=existing_term,
@@ -1008,17 +1039,7 @@ def run_llm_analysis(
 
         # Process fresh LLM results
         for result in results:
-            existing_term = session.execute(
-                select(SearchTerm)
-                .where(SearchTerm.campaign_id == campaign.id)
-                .where(SearchTerm.term == result.query)
-                .order_by(SearchTerm.id.desc())
-            ).scalars().first()
-            if existing_term:
-                search_term = existing_term
-            else:
-                search_term = SearchTerm(campaign=campaign, term=result.query)
-                session.add(search_term)
+            search_term = get_or_create_search_term(session, campaign, result.query)
 
             analysis = SearchTermAnalysis(
                 search_term=search_term,
@@ -1110,7 +1131,7 @@ def export_csv(
             ]
         )
     output.seek(0)
-    filename = f"negative-keyword-suggestions-{dt.datetime.utcnow().date()}.csv"
+    filename = f"negative-keyword-suggestions-{dt.datetime.now(dt.timezone.utc).date()}.csv"
     return StreamingResponse(
         output,
         media_type="text/csv",

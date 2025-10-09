@@ -34,6 +34,10 @@ from .schemas import PageContent
 
 logger = logging.getLogger(__name__)
 
+# Module-level shared thread pool for recursive fallback processing
+_FALLBACK_EXECUTOR = ThreadPoolExecutor(max_workers=2)
+_MAX_RECURSION_DEPTH = 10
+
 DEFAULT_PAGE_SUMMARY_SYSTEM_PROMPT = (
     "You analyze a landing page to infer its product/service, audience, and exclusions. "
     "Return a concise, factual summary (bulleted), avoid marketing fluff."
@@ -246,24 +250,34 @@ def _analyse_chunk(
     campaign_context: str | None,
     chunk: Sequence[dict],
 ) -> list[RelevancyResult]:
-    return _analyse_chunk_with_fallback(page_summary, campaign_context, list(chunk))
+    return _analyse_chunk_with_fallback(page_summary, campaign_context, list(chunk), depth=0)
 
 
 def _analyse_chunk_with_fallback(
     page_summary: str,
     campaign_context: str | None,
     chunk: list[dict],
+    depth: int = 0,
 ) -> list[RelevancyResult]:
     if not chunk:
+        return []
+
+    # Prevent excessive recursion
+    if depth >= _MAX_RECURSION_DEPTH:
+        logger.error(
+            "Max recursion depth reached for chunk of size %d; dropping terms",
+            len(chunk),
+        )
         return []
 
     prompt = _relevancy_user_prompt(page_summary, campaign_context, chunk)
     last_error: ValueError | None = None
     for attempt in range(3):
         logger.debug(
-            "Calling OpenAI relevancy model for %d terms (attempt %d)",
+            "Calling OpenAI relevancy model for %d terms (attempt %d, depth %d)",
             len(chunk),
             attempt + 1,
+            depth,
         )
         try:
             response_text = _call_relevancy_model(prompt)
@@ -273,8 +287,9 @@ def _analyse_chunk_with_fallback(
             logger.warning("LLM JSON parse failure (attempt %s): %s", attempt + 1, exc)
 
     logger.info(
-        "Falling back to smaller batches after repeated LLM parse failures (chunk_size=%s, last_error=%s)",
+        "Falling back to smaller batches after repeated LLM parse failures (chunk_size=%s, depth=%d, last_error=%s)",
         len(chunk),
+        depth,
         last_error,
     )
 
@@ -286,12 +301,11 @@ def _analyse_chunk_with_fallback(
         return []
 
     mid = max(1, len(chunk) // 2)
-    # Parallelize the recursive fallback to avoid sequential processing bottleneck
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        left_future = executor.submit(_analyse_chunk_with_fallback, page_summary, campaign_context, chunk[:mid])
-        right_future = executor.submit(_analyse_chunk_with_fallback, page_summary, campaign_context, chunk[mid:])
-        left = left_future.result()
-        right = right_future.result()
+    # Use module-level shared thread pool for recursive fallback
+    left_future = _FALLBACK_EXECUTOR.submit(_analyse_chunk_with_fallback, page_summary, campaign_context, chunk[:mid], depth + 1)
+    right_future = _FALLBACK_EXECUTOR.submit(_analyse_chunk_with_fallback, page_summary, campaign_context, chunk[mid:], depth + 1)
+    left = left_future.result()
+    right = right_future.result()
     return left + right
 
 
