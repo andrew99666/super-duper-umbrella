@@ -234,7 +234,7 @@ def _max_parallel_requests() -> int:
 
 
 def _relevancy_chunk_size() -> int:
-    default_size = 20
+    default_size = 10
     raw = os.getenv("OPENAI_RELEVANCY_CHUNK_SIZE")
     if not raw:
         return default_size
