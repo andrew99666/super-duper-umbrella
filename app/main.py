@@ -9,6 +9,7 @@ import logging
 import os
 import time
 from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Iterable, List
 from uuid import uuid4
 
@@ -574,9 +575,21 @@ async def analyze(
                 customer_id,
                 landing_elapsed,
             )
-            for lp in landing_pages:
-                landing_page = get_or_create_landing_page(session, lp)
-                landing_page_map.setdefault(lp.campaign_id or "*", landing_page)
+
+            # Process landing pages in parallel
+            max_workers = min(10, len(landing_pages) or 1)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_lp = {
+                    executor.submit(get_or_create_landing_page, session, lp): lp
+                    for lp in landing_pages
+                }
+                for future in as_completed(future_to_lp):
+                    lp = future_to_lp[future]
+                    try:
+                        landing_page = future.result()
+                        landing_page_map.setdefault(lp.campaign_id or "*", landing_page)
+                    except Exception as exc:
+                        logger.error("Failed to process landing page %s: %s", lp.url, exc)
 
             if "*" not in landing_page_map and landing_page_map:
                 landing_page_map["*"] = next(iter(landing_page_map.values()))
