@@ -760,9 +760,13 @@ def get_or_create_landing_page(session: Session, row: LandingPageRow) -> Landing
     now = dt.datetime.now(dt.timezone.utc)
     if existing:
         landing_page = existing
+        # SQLite returns naive datetimes, so we need to make them timezone-aware for comparison
+        summary_created_at = landing_page.summary_created_at
+        if summary_created_at and summary_created_at.tzinfo is None:
+            summary_created_at = summary_created_at.replace(tzinfo=dt.timezone.utc)
         needs_refresh = (
-            not landing_page.summary_created_at
-            or (now - landing_page.summary_created_at) > SUMMARY_TTL
+            not summary_created_at
+            or (now - summary_created_at) > SUMMARY_TTL
         )
         if needs_refresh:
             logger.info("Landing page %s summary expired; refreshing", url)
@@ -907,7 +911,9 @@ def run_llm_analysis(
             continue
 
         # Check for cached analyses (within last 7 days with same landing page)
+        # Use naive datetime for SQLite comparison (SQLite stores datetimes as strings without tz)
         cache_cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
+        cache_cutoff = cache_cutoff.replace(tzinfo=None)
         cached_analyses: Dict[str, SearchTermAnalysis] = {}
         terms_needing_analysis: List[SearchTermRow] = []
 
