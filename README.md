@@ -95,7 +95,7 @@ container for rapid iteration.
    `search_term_view` when necessary) and collects landing-page URLs from ad final URLs plus
    `landing_page_view`.
 5. Landing pages are fetched (ignoring robots.txt because the domains are first-party), parsed, summarised via OpenAI, and cached.
-6. Search terms are deduplicated per campaign, batched (≤50 per call by default), and sent to OpenAI for relevancy scoring and negative keyword
+6. Search terms are deduplicated per campaign, batched (10 per call by default), and sent to OpenAI for relevancy scoring and negative keyword
    recommendations. Results are validated against a strict JSON schema.
 7. Review the suggestion table, toggle approvals (or auto-select high-confidence irrelevants), and export the
    approved list as CSV. Optionally enable `FEATURE_APPLY_NEGATIVES=true` and extend `/apply-negatives` to
@@ -131,7 +131,7 @@ pytest
   expanded final URLs. Duplicate URLs are cached and summaries refreshed on a rolling basis.
 - OpenAI calls use conservative temperature settings (≤0.2), exponential back-off, configurable
   concurrency (set `OPENAI_MAX_CONCURRENT_REQUESTS` and the app will operate at 85% of that limit; the
-  default of 120 yields 102 parallel workers), and tunable batching (`OPENAI_RELEVANCY_CHUNK_SIZE`, default 50)
+  default of 120 yields 102 parallel workers), and tunable batching (`OPENAI_RELEVANCY_CHUNK_SIZE`, default 10)
   plus per-run caps (`OPENAI_MAX_TERMS`) and impression thresholds (`OPENAI_MIN_IMPRESSIONS`) to guard against
   malformed JSON while keeping latency low.
 - Applying negatives via the Google Ads API is scaffolded behind a feature flag to prevent accidental account
