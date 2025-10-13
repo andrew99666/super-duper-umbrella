@@ -17,17 +17,67 @@
     />
     <style>
       body {
-        background: radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 55%),
-          radial-gradient(circle at bottom, rgba(14, 165, 233, 0.08), transparent 45%),
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(14, 165, 233, 0.03) 100%),
+          radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 50%),
+          radial-gradient(circle at bottom left, rgba(14, 165, 233, 0.06), transparent 50%),
           #f8fafc;
         font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        min-height: 100vh;
       }
       .app-card {
-        box-shadow: 0 25px 45px -35px rgba(30, 64, 175, 0.55);
+        box-shadow: 0 20px 40px -25px rgba(30, 64, 175, 0.4),
+                    0 4px 6px -2px rgba(30, 64, 175, 0.05);
       }
       .glass-panel {
-        backdrop-filter: blur(14px);
-        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(16px) saturate(180%);
+        background: rgba(255, 255, 255, 0.85);
+      }
+      @keyframes slideIn {
+        from {
+          transform: translateY(-10px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+      .animate-slide-in {
+        animation: slideIn 0.3s ease-out;
+      }
+      @keyframes progress-pulse {
+        0%, 100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+      .progress-pulse {
+        animation: progress-pulse 2s ease-in-out infinite;
+      }
+      /* Smooth transitions for all interactive elements */
+      button, a, input[type="checkbox"], input[type="range"], select {
+        transition: all 0.2s ease;
+      }
+      button:active, a:active {
+        transform: scale(0.98);
+      }
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
       }
     </style>
   </head>
@@ -50,16 +100,28 @@
     </main>
     <div
       id="global-indicator"
-      class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/35 backdrop-blur-sm"
+      class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm"
+      style="display: none;"
     >
-      <div class="bg-white/95 rounded-xl px-6 py-4 shadow-lg flex items-center gap-4 border border-white/70">
-        <div class="relative">
-          <span class="absolute inset-0 rounded-full bg-blue-200 animate-ping"></span>
-          <span class="relative inline-flex h-3 w-3 rounded-full bg-blue-500"></span>
+      <div class="bg-white/95 rounded-2xl px-8 py-6 shadow-2xl flex flex-col gap-4 border border-white/70 min-w-[320px] animate-slide-in">
+        <div class="flex items-center gap-4">
+          <div class="relative">
+            <span class="absolute inset-0 rounded-full bg-blue-200 animate-ping"></span>
+            <span class="relative inline-flex h-4 w-4 rounded-full bg-blue-600"></span>
+          </div>
+          <div class="flex-1">
+            <p class="text-sm font-semibold text-slate-800" id="progress-title">Running analysis…</p>
+            <p class="text-xs text-slate-500" id="progress-detail">Fetching Google Ads data and scoring search terms.</p>
+          </div>
         </div>
-        <div>
-          <p class="text-sm font-semibold text-slate-700">Running analysis…</p>
-          <p class="text-xs text-slate-500">Fetching Google Ads data and scoring search terms.</p>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between text-xs text-slate-600">
+            <span id="progress-stage">Initializing...</span>
+            <span id="progress-percentage">0%</span>
+          </div>
+          <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+            <div id="progress-bar" class="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-500 ease-out progress-pulse" style="width: 0%"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -68,10 +130,32 @@
       const indicator = document.getElementById("global-indicator");
       const statusPanel = document.getElementById("analysis-status-panel");
       const statusText = document.querySelector("[data-status-text]");
+      const progressTitle = document.getElementById("progress-title");
+      const progressDetail = document.getElementById("progress-detail");
+      const progressStage = document.getElementById("progress-stage");
+      const progressPercentage = document.getElementById("progress-percentage");
+      const progressBar = document.getElementById("progress-bar");
       const buttonState = new WeakMap();
 
-      const showIndicator = () => indicator?.classList.remove("hidden");
-      const hideIndicator = () => indicator?.classList.add("hidden");
+      const showIndicator = () => {
+        if (indicator) {
+          indicator.classList.remove("hidden");
+          indicator.style.display = "flex";
+        }
+      };
+
+      const hideIndicator = () => {
+        if (indicator) {
+          indicator.classList.add("hidden");
+          indicator.style.display = "none";
+        }
+      };
+
+      const updateProgress = (stage, percentage) => {
+        if (progressStage) progressStage.textContent = stage;
+        if (progressPercentage) progressPercentage.textContent = `${Math.round(percentage)}%`;
+        if (progressBar) progressBar.style.width = `${percentage}%`;
+      };
 
       const disableButton = (form) => {
         const button = form.querySelector("[data-analyze-button]");
@@ -106,22 +190,54 @@
         if (target && target.id === "analysis-form") {
           disableButton(target);
           showIndicator();
+          updateProgress("Preparing analysis...", 10);
           if (statusPanel && statusText) {
             statusPanel.classList.remove("hidden");
             statusText.textContent = "Gathering Google Ads data…";
           }
+
+          // Simulate progress updates (in a real implementation, this would come from the server)
+          let progress = 10;
+          const progressInterval = setInterval(() => {
+            progress += Math.random() * 15;
+            if (progress >= 90) {
+              progress = 90;
+              clearInterval(progressInterval);
+            }
+            const stages = [
+              "Fetching campaigns...",
+              "Loading search terms...",
+              "Analyzing landing pages...",
+              "Scoring relevancy...",
+              "Generating suggestions..."
+            ];
+            const stageIndex = Math.min(Math.floor(progress / 20), stages.length - 1);
+            updateProgress(stages[stageIndex], progress);
+          }, 800);
+
+          // Store interval ID for cleanup
+          target.dataset.progressInterval = progressInterval;
         }
       });
 
       document.body.addEventListener("htmx:afterRequest", (event) => {
         const target = event.target;
         if (target && target.id === "analysis-form") {
+          // Clear progress interval
+          const intervalId = target.dataset.progressInterval;
+          if (intervalId) {
+            clearInterval(parseInt(intervalId));
+          }
+
           const successful = event.detail && event.detail.successful;
           if (successful) {
-            hideIndicator();
-            if (statusPanel) {
-              statusPanel.classList.add("hidden");
-            }
+            updateProgress("Complete!", 100);
+            setTimeout(() => {
+              hideIndicator();
+              if (statusPanel) {
+                statusPanel.classList.add("hidden");
+              }
+            }, 500);
             resetButton(target);
           }
         }
@@ -130,6 +246,12 @@
       document.body.addEventListener("htmx:responseError", (event) => {
         const target = event.target;
         if (target && target.id === "analysis-form") {
+          // Clear progress interval
+          const intervalId = target.dataset.progressInterval;
+          if (intervalId) {
+            clearInterval(parseInt(intervalId));
+          }
+
           hideIndicator();
           if (statusPanel && statusText) {
             statusPanel.classList.remove("hidden");

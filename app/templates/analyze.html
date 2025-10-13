@@ -70,34 +70,81 @@
         <button
           type="button"
           id="apply-threshold"
-          class="px-3 py-1.5 border border-blue-200 text-blue-600 rounded-md hover:bg-blue-50"
+          class="px-3 py-1.5 border border-blue-200 text-blue-600 rounded-md hover:bg-blue-50 transition"
         >
           Select negatives ≥ threshold
         </button>
-        <a href="/export" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md">Export CSV</a>
+        <a href="/export" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition shadow-sm">Export CSV</a>
       </div>
     </div>
-    <div class="overflow-x-auto">
+
+    <div class="flex items-center gap-3">
+      <div class="flex-1">
+        <input
+          type="text"
+          id="table-search"
+          placeholder="Search by search term, campaign, or reason..."
+          class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100 transition text-sm"
+        />
+      </div>
+      <div class="text-xs text-slate-500">
+        <span id="visible-count">{{ suggestions|length }}</span> of {{ suggestions|length }} results
+      </div>
+    </div>
+    <div class="overflow-x-auto rounded-lg border border-slate-200">
       <table class="min-w-full divide-y divide-slate-200 text-sm">
-        <thead class="bg-slate-50">
+        <thead class="bg-slate-50 sticky top-0">
           <tr>
-            <th class="px-3 py-2 text-left font-semibold text-slate-600">Approve</th>
-            <th class="px-3 py-2 text-left font-semibold text-slate-600">Search term</th>
-            <th class="px-3 py-2 text-left font-semibold text-slate-600">Metrics</th>
-            <th class="px-3 py-2 text-left font-semibold text-slate-600">Relevancy</th>
-            <th class="px-3 py-2 text-left font-semibold text-slate-600">Reason</th>
-            <th class="px-3 py-2 text-left font-semibold text-slate-600">Match type</th>
+            <th class="px-3 py-3 text-left font-semibold text-slate-600">
+              <input type="checkbox" id="select-all" class="h-4 w-4 rounded" title="Select all" />
+            </th>
+            <th class="px-3 py-3 text-left font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 transition group" onclick="sortTable('term')">
+              <span class="flex items-center gap-1">
+                Search term
+                <svg class="h-3 w-3 text-slate-400 group-hover:text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                </svg>
+              </span>
+            </th>
+            <th class="px-3 py-3 text-left font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 transition group" onclick="sortTable('impressions')">
+              <span class="flex items-center gap-1">
+                Metrics
+                <svg class="h-3 w-3 text-slate-400 group-hover:text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                </svg>
+              </span>
+            </th>
+            <th class="px-3 py-3 text-left font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 transition group" onclick="sortTable('confidence')">
+              <span class="flex items-center gap-1">
+                Relevancy
+                <svg class="h-3 w-3 text-slate-400 group-hover:text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                </svg>
+              </span>
+            </th>
+            <th class="px-3 py-3 text-left font-semibold text-slate-600">Reason</th>
+            <th class="px-3 py-3 text-left font-semibold text-slate-600">Match type</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-slate-100" id="suggestion-table-body">
+        <tbody class="divide-y divide-slate-100 bg-white" id="suggestion-table-body">
           {% for suggestion in suggestions %}
           {% set analysis = suggestion.analysis %}
           {% set term = analysis.search_term %}
-          <tr data-confidence="{{ analysis.confidence or 0 }}" data-negative="{{ 'true' if analysis.suggest_negative else 'false' }}">
-            <td class="px-3 py-2">
+          <tr
+            class="hover:bg-slate-50 transition-colors suggestion-row"
+            data-confidence="{{ analysis.confidence or 0 }}"
+            data-negative="{{ 'true' if analysis.suggest_negative else 'false' }}"
+            data-term="{{ term.term|lower }}"
+            data-campaign="{{ analysis.search_term.campaign.name|lower }}"
+            data-reason="{{ analysis.reason|lower }}"
+            data-impressions="{{ term.impressions or 0 }}"
+            data-clicks="{{ term.clicks or 0 }}"
+            data-conversions="{{ term.conversions or 0 }}"
+          >
+            <td class="px-3 py-3">
               <input
                 type="checkbox"
-                class="h-4 w-4"
+                class="h-4 w-4 suggestion-checkbox cursor-pointer"
                 {% if suggestion.approved %}checked{% endif %}
                 hx-post="/suggestions/{{ suggestion.id }}/toggle"
                 hx-trigger="change"
@@ -105,32 +152,36 @@
                 hx-swap="none"
               />
             </td>
-            <td class="px-3 py-2">
-              <div class="font-medium text-slate-700">{{ term.term }}</div>
-              <div class="text-xs text-slate-400">Campaign: {{ analysis.search_term.campaign.name }}</div>
+            <td class="px-3 py-3">
+              <div class="font-medium text-slate-800">{{ term.term }}</div>
+              <div class="text-xs text-slate-500 mt-0.5">Campaign: {{ analysis.search_term.campaign.name }}</div>
             </td>
-            <td class="px-3 py-2 text-slate-600">
-              <div>Impr: {{ term.impressions or 0 }}</div>
-              <div>Clicks: {{ term.clicks or 0 }}</div>
-              <div>Conv: {{ '%.2f'|format(term.conversions or 0) }}</div>
+            <td class="px-3 py-3 text-slate-600">
+              <div class="space-y-0.5 text-xs">
+                <div><span class="text-slate-500">Impr:</span> <span class="font-medium">{{ term.impressions or 0 }}</span></div>
+                <div><span class="text-slate-500">Clicks:</span> <span class="font-medium">{{ term.clicks or 0 }}</span></div>
+                <div><span class="text-slate-500">Conv:</span> <span class="font-medium">{{ '%.2f'|format(term.conversions or 0) }}</span></div>
+              </div>
             </td>
-            <td class="px-3 py-2">
+            <td class="px-3 py-3">
               <span
-                class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium
+                class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium
               {% if analysis.relevancy_label == 'irrelevant' %}bg-red-100 text-red-700{% elif analysis.relevancy_label == 'possibly_related' %}bg-amber-100 text-amber-700{% else %}bg-emerald-100 text-emerald-700{% endif %}"
               >
                 {{ analysis.relevancy_label.replace('_', ' ') }}
               </span>
-              <div class="text-xs text-slate-500 mt-1">Confidence: {{ '%.2f'|format((analysis.confidence or 0)) }}</div>
+              <div class="text-xs text-slate-500 mt-1.5">Confidence: <span class="font-medium">{{ '%.2f'|format((analysis.confidence or 0)) }}</span></div>
             </td>
-            <td class="px-3 py-2 text-slate-600">
-              <div>{{ analysis.reason }}</div>
+            <td class="px-3 py-3 text-slate-600 max-w-xs">
+              <div class="text-sm">{{ analysis.reason }}</div>
               {% if suggestion.rationale %}
-              <div class="text-xs text-slate-400 mt-1">{{ suggestion.rationale }}</div>
+              <div class="text-xs text-slate-500 mt-1">{{ suggestion.rationale }}</div>
               {% endif %}
             </td>
-            <td class="px-3 py-2 text-slate-600">
-              {{ analysis.suggested_match_type|upper }}
+            <td class="px-3 py-3">
+              <span class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
+                {{ analysis.suggested_match_type|upper }}
+              </span>
             </td>
           </tr>
           {% endfor %}
@@ -200,5 +251,105 @@
     }
 
     updateHighlights();
+
+    // Table search functionality
+    const tableSearch = document.getElementById('table-search');
+    const suggestionRows = document.querySelectorAll('.suggestion-row');
+    const visibleCount = document.getElementById('visible-count');
+    const totalCount = suggestionRows.length;
+
+    if (tableSearch) {
+      tableSearch.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase().trim();
+        let visibleRows = 0;
+
+        suggestionRows.forEach(row => {
+          const term = row.getAttribute('data-term') || '';
+          const campaign = row.getAttribute('data-campaign') || '';
+          const reason = row.getAttribute('data-reason') || '';
+
+          const isVisible = term.includes(searchTerm) ||
+                           campaign.includes(searchTerm) ||
+                           reason.includes(searchTerm);
+
+          row.style.display = isVisible ? '' : 'none';
+          if (isVisible) visibleRows++;
+        });
+
+        if (visibleCount) {
+          visibleCount.textContent = visibleRows;
+        }
+      });
+    }
+
+    // Select all checkbox
+    const selectAllCheckbox = document.getElementById('select-all');
+    const suggestionCheckboxes = document.querySelectorAll('.suggestion-checkbox');
+
+    if (selectAllCheckbox) {
+      selectAllCheckbox.addEventListener('change', (e) => {
+        suggestionCheckboxes.forEach(checkbox => {
+          const row = checkbox.closest('tr');
+          if (row && row.style.display !== 'none') {
+            checkbox.checked = e.target.checked;
+            checkbox.dispatchEvent(new Event('change'));
+          }
+        });
+      });
+    }
+
+    // Table sorting
+    let currentSortColumn = null;
+    let currentSortDirection = 'asc';
+
+    function sortTable(column) {
+      const tbody = document.getElementById('suggestion-table-body');
+      const rows = Array.from(tbody.querySelectorAll('.suggestion-row'));
+
+      // Toggle sort direction if clicking same column
+      if (currentSortColumn === column) {
+        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        currentSortColumn = column;
+        currentSortDirection = 'asc';
+      }
+
+      rows.sort((a, b) => {
+        let aVal, bVal;
+
+        switch(column) {
+          case 'term':
+            aVal = a.getAttribute('data-term') || '';
+            bVal = b.getAttribute('data-term') || '';
+            break;
+          case 'impressions':
+            aVal = parseFloat(a.getAttribute('data-impressions')) || 0;
+            bVal = parseFloat(b.getAttribute('data-impressions')) || 0;
+            break;
+          case 'confidence':
+            aVal = parseFloat(a.getAttribute('data-confidence')) || 0;
+            bVal = parseFloat(b.getAttribute('data-confidence')) || 0;
+            break;
+          default:
+            return 0;
+        }
+
+        if (typeof aVal === 'string') {
+          return currentSortDirection === 'asc'
+            ? aVal.localeCompare(bVal)
+            : bVal.localeCompare(aVal);
+        } else {
+          return currentSortDirection === 'asc'
+            ? aVal - bVal
+            : bVal - aVal;
+        }
+      });
+
+      // Reorder DOM
+      rows.forEach(row => tbody.appendChild(row));
+    }
+
+    // Make sortTable globally available
+    window.sortTable = sortTable;
   </script>
 </section>

@@ -82,25 +82,39 @@
       Pick at least one campaign below. Archived or removed campaigns are listed separately so they don’t clutter your active view.
     </p>
 
+    <div class="mb-4">
+      <input
+        type="text"
+        id="campaign-search"
+        placeholder="Search campaigns..."
+        class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100 transition"
+      />
+    </div>
+
     <div class="grid gap-5 lg:grid-cols-3">
       <div class="bg-white/95 border border-slate-200 rounded-2xl p-4 space-y-3">
         <div class="flex items-center justify-between">
           <h2 class="text-base font-semibold text-slate-800">Active campaigns</h2>
-          <span class="text-xs text-slate-400">{{ active_campaigns|length }} available</span>
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center justify-center h-6 min-w-[24px] px-2 text-xs font-medium text-blue-700 bg-blue-100 rounded-full" id="active-count">{{ active_campaigns|length }}</span>
+            <button type="button" onclick="toggleCampaigns('active', true)" class="text-xs text-blue-600 hover:text-blue-800 transition">Select all</button>
+            <span class="text-slate-300">|</span>
+            <button type="button" onclick="toggleCampaigns('active', false)" class="text-xs text-slate-500 hover:text-slate-700 transition">Clear</button>
+          </div>
         </div>
         {% if active_campaigns %}
         <div class="space-y-2 max-h-64 overflow-y-auto pr-1" id="active-campaigns">
           {% for campaign in active_campaigns %}
-          <label class="flex items-start gap-3 border border-slate-200 hover:border-blue-300 transition rounded-xl px-4 py-3">
+          <label class="campaign-item flex items-start gap-3 border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 transition-all duration-150 rounded-xl px-4 py-3 cursor-pointer" data-campaign-name="{{ campaign.name|lower }}" data-category="active">
             <input
               type="checkbox"
               name="campaign_ids"
               value="{{ campaign.campaign_id }}"
-              class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded"
+              class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-2 focus:ring-blue-200 transition"
             />
-            <span class="text-sm">
+            <span class="text-sm flex-1">
               <span class="font-medium text-slate-800">{{ campaign.name }}</span>
-              <span class="block text-xs text-slate-500">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
+              <span class="block text-xs text-slate-500 mt-0.5">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
             </span>
           </label>
           {% endfor %}
@@ -113,21 +127,26 @@
       <div class="bg-white/95 border border-slate-200 rounded-2xl p-4 space-y-3">
         <div class="flex items-center justify-between">
           <h2 class="text-base font-semibold text-slate-800">Paused campaigns</h2>
-          <span class="text-xs text-slate-400">{{ paused_campaigns|length }} available</span>
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center justify-center h-6 min-w-[24px] px-2 text-xs font-medium text-amber-700 bg-amber-100 rounded-full" id="paused-count">{{ paused_campaigns|length }}</span>
+            <button type="button" onclick="toggleCampaigns('paused', true)" class="text-xs text-blue-600 hover:text-blue-800 transition">Select all</button>
+            <span class="text-slate-300">|</span>
+            <button type="button" onclick="toggleCampaigns('paused', false)" class="text-xs text-slate-500 hover:text-slate-700 transition">Clear</button>
+          </div>
         </div>
         {% if paused_campaigns %}
         <div class="space-y-2 max-h-64 overflow-y-auto pr-1" id="paused-campaigns">
           {% for campaign in paused_campaigns %}
-          <label class="flex items-start gap-3 border border-slate-200 hover:border-blue-300 transition rounded-xl px-4 py-3 bg-slate-50/70">
+          <label class="campaign-item flex items-start gap-3 border border-slate-200 hover:border-amber-400 hover:bg-amber-50/50 transition-all duration-150 rounded-xl px-4 py-3 bg-slate-50/70 cursor-pointer" data-campaign-name="{{ campaign.name|lower }}" data-category="paused">
             <input
               type="checkbox"
               name="campaign_ids"
               value="{{ campaign.campaign_id }}"
-              class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded"
+              class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-2 focus:ring-blue-200 transition"
             />
-            <span class="text-sm">
+            <span class="text-sm flex-1">
               <span class="font-medium text-slate-800">{{ campaign.name }}</span>
-              <span class="block text-xs text-slate-500">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
+              <span class="block text-xs text-slate-500 mt-0.5">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
             </span>
           </label>
           {% endfor %}
@@ -140,25 +159,35 @@
       <div class="bg-white/95 border border-slate-200 rounded-2xl p-4 space-y-3">
         <div class="flex items-center justify-between">
           <h2 class="text-base font-semibold text-slate-800">Archived or ended</h2>
-          <span class="text-xs text-slate-400">{{ archived_campaigns|length }} listed</span>
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center justify-center h-6 min-w-[24px] px-2 text-xs font-medium text-slate-600 bg-slate-100 rounded-full" id="archived-count">{{ archived_campaigns|length }}</span>
+          </div>
         </div>
         {% if archived_campaigns %}
         <details class="space-y-2">
-          <summary class="cursor-pointer text-xs text-slate-500 hover:text-slate-700">
+          <summary class="cursor-pointer text-xs text-slate-500 hover:text-slate-700 transition flex items-center gap-1">
+            <svg class="h-3 w-3 transition-transform" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
             Click to show archived campaigns
           </summary>
           <div class="space-y-2 max-h-64 overflow-y-auto pr-1 mt-2">
+            <div class="flex items-center gap-2 mb-2">
+              <button type="button" onclick="toggleCampaigns('archived', true)" class="text-xs text-blue-600 hover:text-blue-800 transition">Select all</button>
+              <span class="text-slate-300">|</span>
+              <button type="button" onclick="toggleCampaigns('archived', false)" class="text-xs text-slate-500 hover:text-slate-700 transition">Clear</button>
+            </div>
             {% for campaign in archived_campaigns %}
-            <label class="flex items-start gap-3 border border-slate-200 rounded-xl px-4 py-3 bg-slate-100/80">
+            <label class="campaign-item flex items-start gap-3 border border-slate-200 hover:border-slate-400 hover:bg-slate-100 transition-all duration-150 rounded-xl px-4 py-3 bg-slate-100/80 cursor-pointer" data-campaign-name="{{ campaign.name|lower }}" data-category="archived">
               <input
                 type="checkbox"
                 name="campaign_ids"
                 value="{{ campaign.campaign_id }}"
-                class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded"
+                class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-2 focus:ring-blue-200 transition"
               />
-              <span class="text-sm">
+              <span class="text-sm flex-1">
                 <span class="font-medium text-slate-800">{{ campaign.name }}</span>
-                <span class="block text-xs text-slate-500">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
+                <span class="block text-xs text-slate-500 mt-0.5">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
               </span>
             </label>
             {% endfor %}
@@ -205,4 +234,59 @@
     </div>
   </div>
 </section>
+
+<script>
+  // Campaign search functionality
+  const campaignSearch = document.getElementById('campaign-search');
+  const campaignItems = document.querySelectorAll('.campaign-item');
+
+  if (campaignSearch) {
+    campaignSearch.addEventListener('input', (e) => {
+      const searchTerm = e.target.value.toLowerCase().trim();
+      let activeCategoryVisible = 0;
+      let pausedCategoryVisible = 0;
+      let archivedCategoryVisible = 0;
+
+      campaignItems.forEach(item => {
+        const campaignName = item.getAttribute('data-campaign-name') || '';
+        const category = item.getAttribute('data-category') || '';
+        const isVisible = campaignName.includes(searchTerm);
+
+        item.style.display = isVisible ? 'flex' : 'none';
+
+        if (isVisible) {
+          if (category === 'active') activeCategoryVisible++;
+          if (category === 'paused') pausedCategoryVisible++;
+          if (category === 'archived') archivedCategoryVisible++;
+        }
+      });
+
+      // Update counters
+      const activeCount = document.getElementById('active-count');
+      const pausedCount = document.getElementById('paused-count');
+      const archivedCount = document.getElementById('archived-count');
+
+      if (searchTerm) {
+        if (activeCount) activeCount.textContent = activeCategoryVisible;
+        if (pausedCount) pausedCount.textContent = pausedCategoryVisible;
+        if (archivedCount) archivedCount.textContent = archivedCategoryVisible;
+      } else {
+        if (activeCount) activeCount.textContent = '{{ active_campaigns|length }}';
+        if (pausedCount) pausedCount.textContent = '{{ paused_campaigns|length }}';
+        if (archivedCount) archivedCount.textContent = '{{ archived_campaigns|length }}';
+      }
+    });
+  }
+
+  // Toggle campaigns selection
+  function toggleCampaigns(category, selectAll) {
+    const items = document.querySelectorAll(`.campaign-item[data-category="${category}"]`);
+    items.forEach(item => {
+      const checkbox = item.querySelector('input[type="checkbox"]');
+      if (checkbox && item.style.display !== 'none') {
+        checkbox.checked = selectAll;
+      }
+    });
+  }
+</script>
 {% endblock %}
