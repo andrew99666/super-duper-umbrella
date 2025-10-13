@@ -49,9 +49,15 @@
   {% if suggestions %}
   <div class="glass-panel rounded-2xl border border-white/70 p-6 space-y-6 app-card">
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-      <div>
+      <div class="flex-1">
         <h2 class="text-xl font-semibold text-slate-900">LLM suggestions</h2>
         <p class="text-sm text-slate-500">Tune the confidence threshold, approve entries, and export the curated list.</p>
+        <input
+          type="text"
+          id="search-suggestions"
+          placeholder="Search search terms or campaigns..."
+          class="mt-2 w-full max-w-md border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:border-blue-400 focus:outline-none"
+        />
       </div>
       <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
         <label for="confidence-threshold" class="flex items-center gap-2">
@@ -209,9 +215,50 @@
     const thresholdInput = document.getElementById("confidence-threshold");
     const thresholdLabel = document.getElementById("confidence-value");
     const applyThresholdButton = document.getElementById("apply-threshold");
+    const searchInput = document.getElementById("search-suggestions");
     const suggestionRows = document.querySelectorAll("#suggestion-table-body tr");
 
     const formatValue = (value) => Number.parseFloat(value || 0).toFixed(2);
+
+    // Debounce function to prevent excessive filtering on every keystroke
+    function debounce(func, wait) {
+      let timeout;
+      return function executedFunction(...args) {
+        const later = () => {
+          clearTimeout(timeout);
+          func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+      };
+    }
+
+    // Search/filter functionality with debouncing (300ms delay)
+    function filterSuggestions() {
+      if (!searchInput) return;
+      const searchTerm = searchInput.value.toLowerCase().trim();
+
+      suggestionRows.forEach((row) => {
+        if (searchTerm === "") {
+          row.style.display = "";
+          return;
+        }
+
+        // Search in term text and campaign name
+        const termCell = row.querySelector("td:nth-child(2)");
+        const termText = termCell?.textContent.toLowerCase() || "";
+
+        if (termText.includes(searchTerm)) {
+          row.style.display = "";
+        } else {
+          row.style.display = "none";
+        }
+      });
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener("input", debounce(filterSuggestions, 300));
+    }
 
     function updateHighlights() {
       if (!thresholdInput || !thresholdLabel) return;
@@ -234,6 +281,8 @@
     if (applyThresholdButton) {
       applyThresholdButton.addEventListener("click", () => {
         const threshold = Number.parseFloat(thresholdInput?.value || {{ '%.2f'|format(confidence_default) }});
+        const checkboxesToToggle = [];
+
         suggestionRows.forEach((row) => {
           const negative = row.dataset.negative === "true";
           const confidence = Number.parseFloat(row.dataset.confidence || "0");
@@ -243,9 +292,17 @@
           const checkbox = row.querySelector("input[type='checkbox']");
           if (checkbox && !checkbox.checked) {
             checkbox.checked = true;
-            checkbox.dispatchEvent(new Event("change"));
+            checkboxesToToggle.push(checkbox);
           }
         });
+
+        // Instead of triggering individual HTMX requests, update checkboxes silently
+        // Users should use the "Apply via API" button to batch-apply changes
+        // This prevents flooding the API with hundreds of concurrent requests
+        if (checkboxesToToggle.length > 0) {
+          console.log(`Selected ${checkboxesToToggle.length} items. Use "Apply via API" to batch-apply changes.`);
+        }
+
         updateHighlights();
       });
     }

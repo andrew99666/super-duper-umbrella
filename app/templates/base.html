@@ -136,6 +136,7 @@
       const progressPercentage = document.getElementById("progress-percentage");
       const progressBar = document.getElementById("progress-bar");
       const buttonState = new WeakMap();
+      let activeRequest = null;
 
       const showIndicator = () => {
         if (indicator) {
@@ -188,6 +189,8 @@
       document.body.addEventListener("htmx:beforeRequest", (event) => {
         const target = event.target;
         if (target && target.id === "analysis-form") {
+          // Track the active request to prevent race conditions
+          activeRequest = event.detail;
           disableButton(target);
           showIndicator();
           updateProgress("Preparing analysis...", 10);
@@ -256,6 +259,20 @@
           if (statusPanel && statusText) {
             statusPanel.classList.remove("hidden");
             statusText.textContent = "Something went wrong. Please try again.";
+          }
+          resetButton(target);
+        }
+      });
+
+      // Add cleanup for cancelled requests
+      document.body.addEventListener("htmx:abort", (event) => {
+        const target = event.target;
+        if (target && target.id === "analysis-form") {
+          // Clear active request and clean up on abort/cancel
+          activeRequest = null;
+          hideIndicator();
+          if (statusPanel) {
+            statusPanel.classList.add("hidden");
           }
           resetButton(target);
         }
