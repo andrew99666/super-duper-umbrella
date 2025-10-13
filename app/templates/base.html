@@ -69,9 +69,21 @@
       const statusPanel = document.getElementById("analysis-status-panel");
       const statusText = document.querySelector("[data-status-text]");
       const buttonState = new WeakMap();
+      let activeRequest = null;
 
-      const showIndicator = () => indicator?.classList.remove("hidden");
-      const hideIndicator = () => indicator?.classList.add("hidden");
+      const showIndicator = () => {
+        if (indicator) {
+          indicator.classList.remove("hidden");
+          indicator.classList.add("flex");
+        }
+      };
+
+      const hideIndicator = () => {
+        if (indicator) {
+          indicator.classList.add("hidden");
+          indicator.classList.remove("flex");
+        }
+      };
 
       const disableButton = (form) => {
         const button = form.querySelector("[data-analyze-button]");
@@ -104,6 +116,8 @@
       document.body.addEventListener("htmx:beforeRequest", (event) => {
         const target = event.target;
         if (target && target.id === "analysis-form") {
+          // Track the active request to prevent race conditions
+          activeRequest = event.detail;
           disableButton(target);
           showIndicator();
           if (statusPanel && statusText) {
@@ -117,12 +131,16 @@
         const target = event.target;
         if (target && target.id === "analysis-form") {
           const successful = event.detail && event.detail.successful;
-          if (successful) {
-            hideIndicator();
-            if (statusPanel) {
-              statusPanel.classList.add("hidden");
+          // Only process if this is the active request (prevent race conditions)
+          if (activeRequest === event.detail) {
+            activeRequest = null;
+            if (successful) {
+              hideIndicator();
+              if (statusPanel) {
+                statusPanel.classList.add("hidden");
+              }
+              resetButton(target);
             }
-            resetButton(target);
           }
         }
       });
@@ -130,10 +148,26 @@
       document.body.addEventListener("htmx:responseError", (event) => {
         const target = event.target;
         if (target && target.id === "analysis-form") {
+          // Clear active request and clean up on error
+          activeRequest = null;
           hideIndicator();
           if (statusPanel && statusText) {
             statusPanel.classList.remove("hidden");
             statusText.textContent = "Something went wrong. Please try again.";
+          }
+          resetButton(target);
+        }
+      });
+
+      // Add cleanup for cancelled requests
+      document.body.addEventListener("htmx:abort", (event) => {
+        const target = event.target;
+        if (target && target.id === "analysis-form") {
+          // Clear active request and clean up on abort/cancel
+          activeRequest = null;
+          hideIndicator();
+          if (statusPanel) {
+            statusPanel.classList.add("hidden");
           }
           resetButton(target);
         }
