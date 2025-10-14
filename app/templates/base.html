@@ -24,10 +24,49 @@
       }
       .app-card {
         box-shadow: 0 25px 45px -35px rgba(30, 64, 175, 0.55);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .app-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 30px 55px -40px rgba(30, 64, 175, 0.65);
       }
       .glass-panel {
         backdrop-filter: blur(14px);
         background: rgba(255, 255, 255, 0.82);
+      }
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .animate-slide-in {
+        animation: slideIn 0.4s ease-out;
+      }
+      @keyframes progressBar {
+        0% {
+          width: 0%;
+        }
+      }
+      .progress-bar-animated {
+        animation: progressBar 0.6s ease-out;
+      }
+      @keyframes pulse-glow {
+        0%, 100% {
+          opacity: 1;
+          box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+        }
+        50% {
+          opacity: 0.8;
+          box-shadow: 0 0 0 8px rgba(59, 130, 246, 0);
+        }
+      }
+      .pulse-glow {
+        animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
       }
     </style>
   </head>
@@ -50,16 +89,79 @@
     </main>
     <div
       id="global-indicator"
-      class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/35 backdrop-blur-sm"
+      class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm"
     >
-      <div class="bg-white/95 rounded-xl px-6 py-4 shadow-lg flex items-center gap-4 border border-white/70">
-        <div class="relative">
-          <span class="absolute inset-0 rounded-full bg-blue-200 animate-ping"></span>
-          <span class="relative inline-flex h-3 w-3 rounded-full bg-blue-500"></span>
+      <div class="bg-white rounded-2xl px-8 py-6 shadow-2xl max-w-md w-full mx-4 border border-slate-200 animate-slide-in">
+        <div class="flex items-center gap-4 mb-4">
+          <div class="relative">
+            <span class="absolute inset-0 rounded-full bg-blue-200 animate-ping"></span>
+            <span class="relative inline-flex h-4 w-4 rounded-full bg-blue-500 pulse-glow"></span>
+          </div>
+          <div class="flex-1">
+            <p class="text-base font-semibold text-slate-800" id="progress-title">Initializing analysis…</p>
+            <p class="text-xs text-slate-500 mt-0.5" id="progress-subtitle">Preparing your request</p>
+          </div>
         </div>
-        <div>
-          <p class="text-sm font-semibold text-slate-700">Running analysis…</p>
-          <p class="text-xs text-slate-500">Fetching Google Ads data and scoring search terms.</p>
+
+        <!-- Progress bar -->
+        <div class="mb-4">
+          <div class="flex justify-between text-xs text-slate-600 mb-1.5">
+            <span id="progress-stage">Starting</span>
+            <span id="progress-percentage">0%</span>
+          </div>
+          <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+            <div id="progress-bar" class="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-500 ease-out" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Detailed stages -->
+        <div class="space-y-2 text-xs" id="progress-stages">
+          <div class="flex items-center gap-2 text-slate-400" id="stage-init">
+            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            <span>Initializing</span>
+          </div>
+          <div class="flex items-center gap-2 text-slate-400" id="stage-landing">
+            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+            </svg>
+            <span>Fetching landing pages</span>
+          </div>
+          <div class="flex items-center gap-2 text-slate-400" id="stage-terms">
+            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+            </svg>
+            <span>Downloading search terms</span>
+          </div>
+          <div class="flex items-center gap-2 text-slate-400" id="stage-analysis">
+            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            <span>AI relevancy scoring</span>
+          </div>
+          <div class="flex items-center gap-2 text-slate-400" id="stage-complete">
+            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Finalizing results</span>
+          </div>
+        </div>
+
+        <!-- Live stats -->
+        <div class="mt-4 pt-4 border-t border-slate-100 grid grid-cols-3 gap-3 text-center" id="progress-stats">
+          <div>
+            <p class="text-lg font-bold text-blue-600" id="stat-pages">-</p>
+            <p class="text-xs text-slate-500">Pages</p>
+          </div>
+          <div>
+            <p class="text-lg font-bold text-blue-600" id="stat-terms">-</p>
+            <p class="text-xs text-slate-500">Terms</p>
+          </div>
+          <div>
+            <p class="text-lg font-bold text-blue-600" id="stat-analyzed">-</p>
+            <p class="text-xs text-slate-500">Analyzed</p>
+          </div>
         </div>
       </div>
     </div>
@@ -70,8 +172,139 @@
       const statusText = document.querySelector("[data-status-text]");
       const buttonState = new WeakMap();
 
-      const showIndicator = () => indicator?.classList.remove("hidden");
-      const hideIndicator = () => indicator?.classList.add("hidden");
+      // Progress tracking elements
+      const progressTitle = document.getElementById("progress-title");
+      const progressSubtitle = document.getElementById("progress-subtitle");
+      const progressStage = document.getElementById("progress-stage");
+      const progressPercentage = document.getElementById("progress-percentage");
+      const progressBar = document.getElementById("progress-bar");
+      const statPages = document.getElementById("stat-pages");
+      const statTerms = document.getElementById("stat-terms");
+      const statAnalyzed = document.getElementById("stat-analyzed");
+
+      // Stage elements
+      const stageInit = document.getElementById("stage-init");
+      const stageLanding = document.getElementById("stage-landing");
+      const stageTerms = document.getElementById("stage-terms");
+      const stageAnalysis = document.getElementById("stage-analysis");
+      const stageComplete = document.getElementById("stage-complete");
+
+      let progressInterval = null;
+      let simulatedProgress = 0;
+
+      const showIndicator = () => {
+        indicator?.classList.remove("hidden");
+        indicator?.classList.add("flex");
+        resetProgress();
+        startProgressSimulation();
+      };
+
+      const hideIndicator = () => {
+        indicator?.classList.add("hidden");
+        indicator?.classList.remove("flex");
+        stopProgressSimulation();
+      };
+
+      const resetProgress = () => {
+        simulatedProgress = 0;
+        updateProgress(0, "Initializing", "Starting analysis...", "Preparing your request");
+        updateStageStatus("init", "active");
+        updateStats("-", "-", "-");
+      };
+
+      const updateProgress = (percent, stage, title, subtitle) => {
+        if (progressBar) progressBar.style.width = `${percent}%`;
+        if (progressPercentage) progressPercentage.textContent = `${Math.round(percent)}%`;
+        if (progressStage) progressStage.textContent = stage;
+        if (progressTitle) progressTitle.textContent = title;
+        if (progressSubtitle) progressSubtitle.textContent = subtitle;
+      };
+
+      const updateStageStatus = (stageName, status) => {
+        const stages = {
+          init: stageInit,
+          landing: stageLanding,
+          terms: stageTerms,
+          analysis: stageAnalysis,
+          complete: stageComplete
+        };
+
+        // Reset all stages to default
+        Object.values(stages).forEach(stage => {
+          if (stage) {
+            stage.classList.remove("text-blue-600", "font-semibold", "text-green-600");
+            stage.classList.add("text-slate-400");
+          }
+        });
+
+        // Update current stage
+        const currentStage = stages[stageName];
+        if (currentStage) {
+          currentStage.classList.remove("text-slate-400");
+          if (status === "active") {
+            currentStage.classList.add("text-blue-600", "font-semibold");
+          } else if (status === "complete") {
+            currentStage.classList.add("text-green-600");
+          }
+        }
+      };
+
+      const updateStats = (pages, terms, analyzed) => {
+        if (statPages) statPages.textContent = pages;
+        if (statTerms) statTerms.textContent = terms;
+        if (statAnalyzed) statAnalyzed.textContent = analyzed;
+      };
+
+      const startProgressSimulation = () => {
+        simulatedProgress = 0;
+        let stage = 0;
+        const stages = [
+          { percent: 15, name: "init", title: "Initializing analysis…", subtitle: "Connecting to Google Ads API" },
+          { percent: 30, name: "landing", title: "Fetching landing pages…", subtitle: "Collecting campaign URLs" },
+          { percent: 50, name: "terms", title: "Downloading search terms…", subtitle: "Retrieving campaign data" },
+          { percent: 75, name: "analysis", title: "AI relevancy scoring…", subtitle: "Analyzing search terms with OpenAI" },
+          { percent: 90, name: "complete", title: "Finalizing results…", subtitle: "Preparing suggestions" }
+        ];
+
+        progressInterval = setInterval(() => {
+          simulatedProgress += 0.5;
+
+          // Update stage based on progress
+          const currentStageIndex = Math.min(
+            Math.floor(simulatedProgress / 20),
+            stages.length - 1
+          );
+
+          if (currentStageIndex !== stage && currentStageIndex < stages.length) {
+            stage = currentStageIndex;
+            const stageInfo = stages[stage];
+            updateProgress(
+              stageInfo.percent,
+              stageInfo.title.replace("…", ""),
+              stageInfo.title,
+              stageInfo.subtitle
+            );
+            updateStageStatus(stageInfo.name, "active");
+
+            // Simulate stats updates
+            if (stage >= 1) updateStats(Math.floor(Math.random() * 20 + 5), "-", "-");
+            if (stage >= 2) updateStats(statPages.textContent, Math.floor(Math.random() * 500 + 100), "-");
+            if (stage >= 3) updateStats(statPages.textContent, statTerms.textContent, Math.floor(Math.random() * 100 + 20));
+          }
+
+          // Cap at 95% until actual completion
+          if (simulatedProgress >= 95) {
+            simulatedProgress = 95;
+          }
+        }, 300);
+      };
+
+      const stopProgressSimulation = () => {
+        if (progressInterval) {
+          clearInterval(progressInterval);
+          progressInterval = null;
+        }
+      };
 
       const disableButton = (form) => {
         const button = form.querySelector("[data-analyze-button]");
@@ -108,7 +341,7 @@
           showIndicator();
           if (statusPanel && statusText) {
             statusPanel.classList.remove("hidden");
-            statusText.textContent = "Gathering Google Ads data…";
+            statusText.textContent = "Analysis in progress…";
           }
         }
       });
@@ -118,11 +351,17 @@
         if (target && target.id === "analysis-form") {
           const successful = event.detail && event.detail.successful;
           if (successful) {
-            hideIndicator();
-            if (statusPanel) {
-              statusPanel.classList.add("hidden");
-            }
-            resetButton(target);
+            // Show completion
+            updateProgress(100, "Complete", "Analysis complete!", "Results are ready");
+            updateStageStatus("complete", "complete");
+
+            setTimeout(() => {
+              hideIndicator();
+              if (statusPanel) {
+                statusPanel.classList.add("hidden");
+              }
+              resetButton(target);
+            }, 800);
           }
         }
       });
