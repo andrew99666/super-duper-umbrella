@@ -27,18 +27,45 @@
         </select>
       </form>
     </div>
-    <div class="grid gap-3 mt-6 text-sm sm:grid-cols-3">
-      <div class="bg-white/90 border border-slate-200 rounded-xl px-4 py-3">
-        <p class="text-xs text-slate-500 uppercase tracking-wide">Active</p>
-        <p class="text-xl font-semibold text-slate-800">{{ active_campaigns|length }}</p>
+    <div class="grid gap-4 mt-6 text-sm sm:grid-cols-3">
+      <div class="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border border-emerald-200 rounded-xl px-5 py-4 shadow-sm hover:shadow-md transition-all">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-medium text-emerald-700 uppercase tracking-wide">Active</p>
+            <p class="text-2xl font-bold text-emerald-900 mt-1">{{ active_campaigns|length }}</p>
+          </div>
+          <div class="h-10 w-10 bg-emerald-500/20 rounded-full flex items-center justify-center">
+            <svg class="h-5 w-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+          </div>
+        </div>
       </div>
-      <div class="bg-white/90 border border-slate-200 rounded-xl px-4 py-3">
-        <p class="text-xs text-slate-500 uppercase tracking-wide">Paused</p>
-        <p class="text-xl font-semibold text-slate-800">{{ paused_campaigns|length }}</p>
+      <div class="bg-gradient-to-br from-amber-50 to-amber-100/50 border border-amber-200 rounded-xl px-5 py-4 shadow-sm hover:shadow-md transition-all">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-medium text-amber-700 uppercase tracking-wide">Paused</p>
+            <p class="text-2xl font-bold text-amber-900 mt-1">{{ paused_campaigns|length }}</p>
+          </div>
+          <div class="h-10 w-10 bg-amber-500/20 rounded-full flex items-center justify-center">
+            <svg class="h-5 w-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+        </div>
       </div>
-      <div class="bg-white/90 border border-slate-200 rounded-xl px-4 py-3">
-        <p class="text-xs text-slate-500 uppercase tracking-wide">Archived / ended</p>
-        <p class="text-xl font-semibold text-slate-800">{{ archived_campaigns|length }}</p>
+      <div class="bg-gradient-to-br from-slate-50 to-slate-100/50 border border-slate-200 rounded-xl px-5 py-4 shadow-sm hover:shadow-md transition-all">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-medium text-slate-600 uppercase tracking-wide">Archived</p>
+            <p class="text-2xl font-bold text-slate-800 mt-1">{{ archived_campaigns|length }}</p>
+          </div>
+          <div class="h-10 w-10 bg-slate-500/20 rounded-full flex items-center justify-center">
+            <svg class="h-5 w-5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+            </svg>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -91,16 +118,16 @@
         {% if active_campaigns %}
         <div class="space-y-2 max-h-64 overflow-y-auto pr-1" id="active-campaigns">
           {% for campaign in active_campaigns %}
-          <label class="flex items-start gap-3 border border-slate-200 hover:border-blue-300 transition rounded-xl px-4 py-3">
+          <label class="flex items-start gap-3 border border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 transition-all cursor-pointer rounded-xl px-4 py-3 group">
             <input
               type="checkbox"
               name="campaign_ids"
               value="{{ campaign.campaign_id }}"
-              class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded"
+              class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
             />
-            <span class="text-sm">
-              <span class="font-medium text-slate-800">{{ campaign.name }}</span>
-              <span class="block text-xs text-slate-500">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
+            <span class="text-sm flex-1">
+              <span class="font-medium text-slate-800 group-hover:text-blue-700">{{ campaign.name }}</span>
+              <span class="block text-xs text-slate-500 mt-0.5">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
             </span>
           </label>
           {% endfor %}
@@ -118,16 +145,16 @@
         {% if paused_campaigns %}
         <div class="space-y-2 max-h-64 overflow-y-auto pr-1" id="paused-campaigns">
           {% for campaign in paused_campaigns %}
-          <label class="flex items-start gap-3 border border-slate-200 hover:border-blue-300 transition rounded-xl px-4 py-3 bg-slate-50/70">
+          <label class="flex items-start gap-3 border border-slate-200 hover:border-amber-400 hover:bg-amber-50/30 transition-all cursor-pointer rounded-xl px-4 py-3 bg-slate-50/70 group">
             <input
               type="checkbox"
               name="campaign_ids"
               value="{{ campaign.campaign_id }}"
-              class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded"
+              class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
             />
-            <span class="text-sm">
-              <span class="font-medium text-slate-800">{{ campaign.name }}</span>
-              <span class="block text-xs text-slate-500">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
+            <span class="text-sm flex-1">
+              <span class="font-medium text-slate-800 group-hover:text-amber-700">{{ campaign.name }}</span>
+              <span class="block text-xs text-slate-500 mt-0.5">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
             </span>
           </label>
           {% endfor %}
@@ -149,16 +176,16 @@
           </summary>
           <div class="space-y-2 max-h-64 overflow-y-auto pr-1 mt-2">
             {% for campaign in archived_campaigns %}
-            <label class="flex items-start gap-3 border border-slate-200 rounded-xl px-4 py-3 bg-slate-100/80">
+            <label class="flex items-start gap-3 border border-slate-200 hover:border-slate-400 hover:bg-slate-100 transition-all cursor-pointer rounded-xl px-4 py-3 bg-slate-100/80 group">
               <input
                 type="checkbox"
                 name="campaign_ids"
                 value="{{ campaign.campaign_id }}"
-                class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded"
+                class="mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
               />
-              <span class="text-sm">
-                <span class="font-medium text-slate-800">{{ campaign.name }}</span>
-                <span class="block text-xs text-slate-500">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
+              <span class="text-sm flex-1">
+                <span class="font-medium text-slate-800 group-hover:text-slate-900">{{ campaign.name }}</span>
+                <span class="block text-xs text-slate-500 mt-0.5">{{ campaign.advertising_channel_type }} · {{ campaign.status_label }}</span>
               </span>
             </label>
             {% endfor %}
@@ -177,13 +204,13 @@
       </label>
       <button
         type="submit"
-        class="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm"
+        class="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all transform hover:scale-105"
         data-analyze-button
       >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l6-6 4 4 6-6" />
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
-        Run analysis
+        Run Analysis
       </button>
     </div>
   </form>
