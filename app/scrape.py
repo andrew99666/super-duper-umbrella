@@ -22,6 +22,7 @@ def fetch_page(url: str) -> Optional[tuple[str, str]]:
     robots.txt directives that would otherwise block crawling.
     """
 
+    logger.info("Starting fetch_page for %s (timeout=%ds)", url, REQUEST_TIMEOUT)
     try:
         response = requests.get(
             url,
@@ -29,6 +30,7 @@ def fetch_page(url: str) -> Optional[tuple[str, str]]:
             timeout=REQUEST_TIMEOUT,
             allow_redirects=True,
         )
+        logger.debug("Received response for %s with status %d", url, response.status_code)
     except requests.RequestException as exc:
         logger.warning("Failed to fetch %s: %s", url, exc)
         return None
@@ -38,11 +40,13 @@ def fetch_page(url: str) -> Optional[tuple[str, str]]:
         return None
 
     final_url = str(response.url)
+    logger.info("Successfully fetched %s (final URL: %s, content length: %d bytes)", url, final_url, len(response.text))
     return final_url, response.text
 
 
 def extract_page_content(url: str, html: str) -> PageContent:
     """Parse HTML content and extract text snippets for LLM consumption."""
+    logger.debug("Starting extract_page_content for %s", url)
     soup = BeautifulSoup(html, "html.parser")
 
     title_tag = soup.find("title")
@@ -68,6 +72,7 @@ def extract_page_content(url: str, html: str) -> PageContent:
     visible_text = " ".join(text_chunks)
     excerpt = visible_text[:2000]
 
+    logger.debug("Extracted page content for %s: title=%s, h1_count=%d, h2_count=%d", url, title, len(h1s), len(h2s))
     return PageContent(
         url=url,
         title=title,
