@@ -553,8 +553,19 @@ async def analyze(
     error_message = None
     try:
         login_header = user.login_customer_id or os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+        logger.info(
+            "Starting analysis loop for %d customer accounts with %d total campaigns",
+            len(campaigns_by_customer),
+            len(campaign_records),
+        )
         for customer_id, campaigns in campaigns_by_customer.items():
             ga_campaign_ids = [campaign.campaign_id for campaign in campaigns]
+            logger.info(
+                "Processing customer %s with %d campaigns: %s",
+                customer_id,
+                len(campaigns),
+                ga_campaign_ids,
+            )
             logger.info(
                 "Fetching landing pages for customer %s campaigns %s",
                 customer_id,
@@ -578,18 +589,35 @@ async def analyze(
 
             # Process landing pages in parallel
             max_workers = min(10, len(landing_pages) or 1)
+            logger.info(
+                "Starting parallel processing of %d landing pages with %d workers",
+                len(landing_pages),
+                max_workers,
+            )
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 future_to_lp = {
                     executor.submit(get_or_create_landing_page, session, lp): lp
                     for lp in landing_pages
                 }
+                logger.info("Submitted %d landing page processing tasks", len(future_to_lp))
+                completed_count = 0
                 for future in as_completed(future_to_lp):
                     lp = future_to_lp[future]
                     try:
+                        logger.debug("Processing completed future for landing page %s", lp.url)
                         landing_page = future.result()
                         landing_page_map.setdefault(lp.campaign_id or "*", landing_page)
+                        completed_count += 1
+                        logger.info(
+                            "Successfully processed landing page %s (%d/%d complete)",
+                            lp.url,
+                            completed_count,
+                            len(landing_pages),
+                        )
                     except Exception as exc:
-                        logger.error("Failed to process landing page %s: %s", lp.url, exc)
+                        logger.error("Failed to process landing page %s: %s", lp.url, exc, exc_info=True)
+                        completed_count += 1
+            logger.info("Completed parallel processing of all %d landing pages", len(landing_pages))
 
             if "*" not in landing_page_map and landing_page_map:
                 landing_page_map["*"] = next(iter(landing_page_map.values()))
@@ -766,57 +794,74 @@ async def analyze(
 
 def get_or_create_landing_page(session: Session, row: LandingPageRow) -> LandingPage:
     url = row.url
-    logger.debug("Fetching cached landing page for %s", url)
-    existing = session.execute(
-        select(LandingPage).where(LandingPage.url == url)
-    ).scalar_one_or_none()
-    now = dt.datetime.now(dt.timezone.utc)
-    if existing:
-        landing_page = existing
-        # SQLite returns naive datetimes, so we need to make them timezone-aware for comparison
-        summary_created_at = landing_page.summary_created_at
-        if summary_created_at and summary_created_at.tzinfo is None:
-            summary_created_at = summary_created_at.replace(tzinfo=dt.timezone.utc)
-        needs_refresh = (
-            not summary_created_at
-            or (now - summary_created_at) > SUMMARY_TTL
-        )
-        if needs_refresh:
-            logger.info("Landing page %s summary expired; refreshing", url)
-        else:
-            logger.info("Using cached landing page summary for %s", url)
-    else:
-        landing_page = LandingPage(url=url)
-        session.add(landing_page)
-        needs_refresh = True
-        logger.info("Discovered new landing page %s", url)
-
-    if needs_refresh:
-        fetch_start = time.perf_counter()
-        page_data = fetch_page(url)
-        if page_data:
-            final_url, html = page_data
-            content = extract_page_content(final_url, html)
-            landing_page.canonical_url = content.canonical_url
-            landing_page.title = content.title
-            landing_page.meta_description = content.meta_description
-            landing_page.h1 = ", ".join(content.h1s)
-            landing_page.h2 = ", ".join(content.h2s)
-            landing_page.text_excerpt = content.visible_text_excerpt
-            landing_page.last_fetched_at = now
-            landing_page.content_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
-            summary = generate_page_summary(content)
-            landing_page.summary = summary
-            landing_page.summary_created_at = now
-            logger.info(
-                "Generated landing page summary for %s in %.2fs",
-                url,
-                time.perf_counter() - fetch_start,
+    logger.info("Starting get_or_create_landing_page for %s", url)
+    try:
+        logger.debug("Querying database for existing landing page %s", url)
+        existing = session.execute(
+            select(LandingPage).where(LandingPage.url == url)
+        ).scalar_one_or_none()
+        now = dt.datetime.now(dt.timezone.utc)
+        if existing:
+            landing_page = existing
+            logger.debug("Found existing landing page record for %s", url)
+            # SQLite returns naive datetimes, so we need to make them timezone-aware for comparison
+            summary_created_at = landing_page.summary_created_at
+            if summary_created_at and summary_created_at.tzinfo is None:
+                summary_created_at = summary_created_at.replace(tzinfo=dt.timezone.utc)
+            needs_refresh = (
+                not summary_created_at
+                or (now - summary_created_at) > SUMMARY_TTL
             )
+            if needs_refresh:
+                logger.info("Landing page %s summary expired; refreshing", url)
+            else:
+                logger.info("Using cached landing page summary for %s", url)
         else:
-            logger.info("Skipping LLM summary for %s due to fetch failure", url)
-    session.add(landing_page)
-    return landing_page
+            landing_page = LandingPage(url=url)
+            session.add(landing_page)
+            needs_refresh = True
+            logger.info("Discovered new landing page %s", url)
+
+        if needs_refresh:
+            fetch_start = time.perf_counter()
+            logger.info("Fetching page content for %s", url)
+            page_data = fetch_page(url)
+            if page_data:
+                logger.debug("Successfully fetched page data for %s", url)
+                final_url, html = page_data
+                logger.debug("Extracting page content for %s", url)
+                content = extract_page_content(final_url, html)
+                landing_page.canonical_url = content.canonical_url
+                landing_page.title = content.title
+                landing_page.meta_description = content.meta_description
+                landing_page.h1 = ", ".join(content.h1s)
+                landing_page.h2 = ", ".join(content.h2s)
+                landing_page.text_excerpt = content.visible_text_excerpt
+                landing_page.last_fetched_at = now
+                landing_page.content_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
+                logger.info("Generating LLM summary for %s", url)
+                summary = generate_page_summary(content)
+                landing_page.summary = summary
+                landing_page.summary_created_at = now
+                logger.info(
+                    "Generated landing page summary for %s in %.2fs",
+                    url,
+                    time.perf_counter() - fetch_start,
+                )
+            else:
+                logger.warning("Skipping LLM summary for %s due to fetch failure", url)
+        logger.debug("Adding/updating landing page in session for %s", url)
+        session.add(landing_page)
+        logger.info("Successfully completed get_or_create_landing_page for %s", url)
+        return landing_page
+    except Exception as exc:
+        logger.error(
+            "Exception in get_or_create_landing_page for %s: %s",
+            url,
+            exc,
+            exc_info=True,
+        )
+        raise
 
 
 def persist_search_terms(

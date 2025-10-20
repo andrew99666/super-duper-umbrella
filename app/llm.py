@@ -168,6 +168,7 @@ def _temperature_kwargs(model: str, desired: float | None) -> dict[str, float]:
 @_openai_retry()
 def generate_page_summary(page: PageContent) -> str:
     """Create a compact landing-page summary using the LLM."""
+    logger.info("Starting generate_page_summary for %s", page.url)
     client = _get_openai_client()
     prompt = {
         "url": page.url,
@@ -180,6 +181,7 @@ def generate_page_summary(page: PageContent) -> str:
     }
     start = time.perf_counter()
     model = _model_name()
+    logger.info("Calling OpenAI API with model %s for %s", model, page.url)
     response = client.chat.completions.create(
         model=model,
         messages=[
@@ -188,6 +190,7 @@ def generate_page_summary(page: PageContent) -> str:
         ],
         **_temperature_kwargs(model, 0.2),
     )
+    logger.debug("Received response from OpenAI API for %s", page.url)
     content = response.choices[0].message.content or ""
     logger.info(
         "Generated LLM summary for %s in %.2fs",
