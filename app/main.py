@@ -594,6 +594,7 @@ async def analyze(
                 len(landing_pages),
                 max_workers,
             )
+            customer_landing_pages = []  # Track landing pages processed for this customer
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 future_to_lp = {
                     executor.submit(get_or_create_landing_page, session, lp): lp
@@ -607,6 +608,7 @@ async def analyze(
                         logger.debug("Processing completed future for landing page %s", lp.url)
                         landing_page = future.result()
                         landing_page_map.setdefault(lp.campaign_id or "*", landing_page)
+                        customer_landing_pages.append(landing_page)  # Track this customer's landing pages
                         completed_count += 1
                         logger.info(
                             "Successfully processed landing page %s (%d/%d complete)",
@@ -619,8 +621,19 @@ async def analyze(
                         completed_count += 1
             logger.info("Completed parallel processing of all %d landing pages", len(landing_pages))
 
-            if "*" not in landing_page_map and landing_page_map:
-                landing_page_map["*"] = next(iter(landing_page_map.values()))
+            # Update the "*" fallback to use a landing page from this customer's campaigns
+            # Prefer landing pages with summaries
+            customer_pages_with_summary = [
+                lp for lp in customer_landing_pages
+                if lp.summary  # Only consider landing pages with summaries
+            ]
+            if customer_pages_with_summary:
+                landing_page_map["*"] = customer_pages_with_summary[0]
+                logger.info("Set fallback landing page with summary for customer %s", customer_id)
+            elif customer_landing_pages:
+                # If no landing pages have summaries, use any available one as fallback
+                landing_page_map["*"] = customer_landing_pages[0]
+                logger.warning("Set fallback landing page without summary for customer %s", customer_id)
 
             logger.info(
                 "Fetching search terms for customer %s campaigns %s",
