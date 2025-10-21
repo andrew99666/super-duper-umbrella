@@ -607,7 +607,11 @@ async def analyze(
                     try:
                         logger.debug("Processing completed future for landing page %s", lp.url)
                         landing_page = future.result()
-                        landing_page_map.setdefault(lp.campaign_id or "*", landing_page)
+                        # Prefer landing pages with summaries when multiple pages exist for same campaign
+                        key = lp.campaign_id or "*"
+                        existing = landing_page_map.get(key)
+                        if not existing or (landing_page.summary and not existing.summary):
+                            landing_page_map[key] = landing_page
                         customer_landing_pages.append(landing_page)  # Track this customer's landing pages
                         completed_count += 1
                         logger.info(
