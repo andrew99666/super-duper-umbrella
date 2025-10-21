@@ -974,12 +974,26 @@ def run_llm_analysis(
             campaign_id,
         )
         landing_page = landing_pages.get(campaign_id) or landing_pages.get("*")
-        if not landing_page or not landing_page.summary:
-            logger.info("No landing page summary for campaign %s; skipping LLM analysis", campaign_id)
-            continue
         campaign = campaigns_by_id.get(campaign_id)
         if not campaign:
             continue
+
+        # Determine the page summary to use for analysis
+        page_summary: str
+        if landing_page and landing_page.summary:
+            page_summary = landing_page.summary
+        else:
+            # No landing page summary available; use a generic fallback
+            logger.warning(
+                "No landing page summary available for campaign %s; proceeding with generic analysis",
+                campaign_id
+            )
+            page_summary = (
+                "Landing page information is not available. "
+                "Analyze search terms based on general relevance and quality criteria."
+            )
+            # Set landing_page to None so we don't cache against a specific page
+            landing_page = None
 
         # Check for cached analyses (within last 7 days with same landing page)
         # Use naive datetime for SQLite comparison (SQLite stores datetimes as strings without tz)
@@ -1001,7 +1015,7 @@ def run_llm_analysis(
 
         # Fetch all recent analyses for these terms at once
         term_ids = [term.id for term in existing_terms]
-        if term_ids:
+        if term_ids and landing_page:
             recent_analyses = session.execute(
                 select(SearchTermAnalysis)
                 .where(SearchTermAnalysis.search_term_id.in_(term_ids))
@@ -1049,7 +1063,7 @@ def run_llm_analysis(
             ]
             llm_start = time.perf_counter()
             results = analyze_search_terms(
-                page_summary=landing_page.summary,
+                page_summary=page_summary,
                 campaign_context=f"Campaign: {campaign.name}",
                 terms=term_payloads,
             )
