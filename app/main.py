@@ -327,7 +327,13 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
                 continue
             metadata.setdefault(child.resource_name, child)
             queue.append(child.resource_name)
-            parent_logins.setdefault(child.resource_name, child.id if child.manager else (login_customer_id or customer_id))
+            # For child accounts, use the parent manager's ID as login-customer-id
+            # Manager accounts can use their own ID, non-managers must use their parent manager
+            if child.manager:
+                parent_logins.setdefault(child.resource_name, child.id)
+            else:
+                # Non-manager child accounts need the manager account ID
+                parent_logins.setdefault(child.resource_name, login_customer_id or customer_id)
             if child.manager and child.id not in manager_candidates:
                 manager_candidates.append(child.id)
 
