@@ -214,6 +214,7 @@ def oauth_callback(request: Request, session: Session = Depends(get_session)) ->
         client = build_google_ads_client(user)
         service = GoogleAdsService(client)
         sync_customers(session, user, service)
+        session.commit()
     except GoogleAdsOAuthError as exc:
         session.rollback()
         logger.exception("Failed to sync Google Ads accounts: %s", exc)
