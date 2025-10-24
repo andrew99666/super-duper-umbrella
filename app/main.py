@@ -289,7 +289,10 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
             logger.debug("Failed to hydrate customer %s: %s", resource_name, exc)
 
         existing = session.execute(
-            select(GoogleAdsCustomer).where(GoogleAdsCustomer.resource_name == resource_name)
+            select(GoogleAdsCustomer).where(
+                GoogleAdsCustomer.resource_name == resource_name,
+                GoogleAdsCustomer.user_id == user.id
+            )
         ).scalar_one_or_none()
         if existing:
             customer = existing
