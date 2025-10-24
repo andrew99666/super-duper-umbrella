@@ -290,12 +290,13 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
 
         existing = session.execute(
             select(GoogleAdsCustomer).where(
-                GoogleAdsCustomer.resource_name == resource_name,
-                GoogleAdsCustomer.user_id == user.id
+                GoogleAdsCustomer.resource_name == resource_name
             )
         ).scalar_one_or_none()
         if existing:
             customer = existing
+            # Update user association if it changed
+            customer.user_id = user.id
         else:
             customer = GoogleAdsCustomer(
                 user_id=user.id,
