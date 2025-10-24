@@ -53,7 +53,7 @@ class GoogleAdsCustomer(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    resource_name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    resource_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     customer_id: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
     descriptive_name: Mapped[Optional[str]] = mapped_column(String(255))
     currency_code: Mapped[Optional[str]] = mapped_column(String(10))
