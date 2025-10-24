@@ -307,20 +307,26 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
         if is_manager and customer_id not in manager_candidates:
             manager_candidates.append(customer_id)
 
-        try:
-            child_start = time.perf_counter()
-            child_customers = service.list_customer_clients(
-                customer_id, login_customer_id=login_customer_id or customer_id
-            )
-            logger.info(
-                "Customer %s returned %d child accounts in %.2fs",
-                customer_id,
-                len(child_customers),
-                time.perf_counter() - child_start,
-            )
-        except Exception as exc:  # pragma: no cover - network error fallback
-            logger.debug("Failed to list child customers for %s: %s", customer_id, exc)
+        # Only list customer clients for manager accounts
+        # Non-manager accounts don't have child accounts and will fail with permission errors
+        if is_manager:
+            try:
+                child_start = time.perf_counter()
+                child_customers = service.list_customer_clients(
+                    customer_id, login_customer_id=login_customer_id or customer_id
+                )
+                logger.info(
+                    "Customer %s returned %d child accounts in %.2fs",
+                    customer_id,
+                    len(child_customers),
+                    time.perf_counter() - child_start,
+                )
+            except Exception as exc:  # pragma: no cover - network error fallback
+                logger.debug("Failed to list child customers for %s: %s", customer_id, exc)
+                child_customers = []
+        else:
             child_customers = []
+            logger.debug("Skipping list_customer_clients for non-manager account %s", customer_id)
 
         for child in child_customers:
             if child.id in seen_ids:
