@@ -427,12 +427,24 @@ async def list_campaigns(
 
     for campaign in campaign_payload:
         status_value = (campaign.get("status") or "").upper()
+        logger.info(
+            "Campaign segmentation: %s has status=%r (upper=%r)",
+            campaign.get("name"),
+            campaign.get("status"),
+            status_value,
+        )
         if status_value == "ENABLED":
             active_campaigns.append(campaign)
         elif status_value in {"PAUSED", "PENDING"}:
             paused_campaigns.append(campaign)
         elif status_value == "REMOVED":
             archived_campaigns.append(campaign)
+        else:
+            logger.warning(
+                "Campaign %s has unexpected status %r - not categorized",
+                campaign.get("name"),
+                status_value,
+            )
 
     sort_key = lambda c: (c.get("name") or "").lower()
     active_campaigns.sort(key=sort_key)
