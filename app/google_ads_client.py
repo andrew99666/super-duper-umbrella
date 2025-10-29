@@ -423,8 +423,8 @@ class GoogleAdsService:
                         campaign_id=str(campaign.id),
                         name=str(campaign.name),
                         customer_id=customer_id,
-                        status=str(campaign.status),
-                        advertising_channel_type=str(campaign.advertising_channel_type),
+                        status=campaign.status.name if hasattr(campaign.status, 'name') else str(campaign.status),
+                        advertising_channel_type=campaign.advertising_channel_type.name if hasattr(campaign.advertising_channel_type, 'name') else str(campaign.advertising_channel_type),
                     )
                 )
             logger.info(
