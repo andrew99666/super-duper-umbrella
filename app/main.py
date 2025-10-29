@@ -431,7 +431,7 @@ async def list_campaigns(
             active_campaigns.append(campaign)
         elif status_value in {"PAUSED", "PENDING"}:
             paused_campaigns.append(campaign)
-        else:
+        elif status_value == "REMOVED":
             archived_campaigns.append(campaign)
 
     sort_key = lambda c: (c.get("name") or "").lower()
