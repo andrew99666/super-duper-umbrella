@@ -650,33 +650,6 @@ class GoogleAdsService:
             time.perf_counter() - ad_start,
         )
 
-        lp_query = build_landing_page_view_query(campaign_ids)
-        try:
-            lp_start = time.perf_counter()
-            response = ga_service.search_stream(
-                customer_id=customer_id,
-                query=lp_query,
-                **_metadata_kwargs(login_customer_id),
-            )
-        except MethodNotImplemented as exc:  # pragma: no cover - network version error
-            _raise_api_version_error(exc)
-        for batch in response:
-            for row in batch.results:
-                campaign_id = str(row.campaign.id) if hasattr(row, "campaign") else None
-                url = str(row.landing_page_view.unexpanded_final_url)
-                if not url:
-                    continue
-                if campaign_id:
-                    urls_by_campaign.setdefault(campaign_id, set()).add(url)
-                else:
-                    for cid in urls_by_campaign.keys():
-                        urls_by_campaign[cid].add(url)
-        logger.info(
-            "Landing page view augmented URLs to %d unique entries in %.2fs",
-            sum(len(urls) for urls in urls_by_campaign.values()),
-            time.perf_counter() - lp_start,
-        )
-
         for campaign_id, urls in urls_by_campaign.items():
             for url in urls:
                 yield LandingPageRow(campaign_id=campaign_id, url=url, canonical_url=None)
