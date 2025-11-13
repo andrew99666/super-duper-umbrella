@@ -285,6 +285,19 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
             currency_code = getattr(customer_data, "currency_code", currency_code)
             time_zone = getattr(customer_data, "time_zone", time_zone)
             is_manager = bool(getattr(customer_data, "manager", is_manager))
+
+            # If descriptive_name is still empty, try GAQL query method
+            if not descriptive_name:
+                customer_details = service.get_customer_details(
+                    customer_id, login_customer_id=login_customer_id
+                )
+                if customer_details:
+                    descriptive_name = getattr(customer_details, "descriptive_name", None)
+                    if not currency_code:
+                        currency_code = getattr(customer_details, "currency_code", None)
+                    if not time_zone:
+                        time_zone = getattr(customer_details, "time_zone", None)
+                    is_manager = bool(getattr(customer_details, "manager", is_manager))
         except Exception as exc:  # pragma: no cover - network error fallback
             logger.debug("Failed to hydrate customer %s: %s", resource_name, exc)
 
@@ -427,24 +440,12 @@ async def list_campaigns(
 
     for campaign in campaign_payload:
         status_value = (campaign.get("status") or "").upper()
-        logger.info(
-            "Campaign segmentation: %s has status=%r (upper=%r)",
-            campaign.get("name"),
-            campaign.get("status"),
-            status_value,
-        )
         if status_value == "ENABLED":
             active_campaigns.append(campaign)
         elif status_value in {"PAUSED", "PENDING"}:
             paused_campaigns.append(campaign)
         elif status_value == "REMOVED":
             archived_campaigns.append(campaign)
-        else:
-            logger.warning(
-                "Campaign %s has unexpected status %r - not categorized",
-                campaign.get("name"),
-                status_value,
-            )
 
     sort_key = lambda c: (c.get("name") or "").lower()
     active_campaigns.sort(key=sort_key)

@@ -400,13 +400,42 @@ class GoogleAdsService:
             _raise_api_version_error(exc)
 
     @_google_ads_retry()
+    def get_customer_details(self, customer_id: str, login_customer_id: str | None = None):
+        """Fetch customer details using GAQL query for more reliable data retrieval."""
+        ga_service = self.client.get_service("GoogleAdsService")
+        query = """
+            SELECT
+              customer.id,
+              customer.descriptive_name,
+              customer.currency_code,
+              customer.time_zone,
+              customer.manager
+            FROM customer
+        """
+        try:
+            response = ga_service.search(
+                customer_id=customer_id,
+                query=query,
+                **_metadata_kwargs(login_customer_id),
+            )
+            for row in response:
+                # Should only be one row for the customer resource
+                return row.customer
+            return None
+        except MethodNotImplemented as exc:  # pragma: no cover - network version error
+            _raise_api_version_error(exc)
+        except GoogleAdsException as exc:  # pragma: no cover - network error
+            logger.debug("Failed to fetch customer details for %s: %s", customer_id, exc)
+            return None
+
+    @_google_ads_retry()
     def list_campaigns(
         self, customer_id: str, *, login_customer_id: str | None = None
     ) -> list[CampaignSummary]:
         ga_service = self.client.get_service("GoogleAdsService")
         query = (
             "SELECT campaign.id, campaign.name, campaign.status, "
-            "campaign.advertising_channel_type FROM campaign WHERE campaign.status != 'REMOVED'"
+            "campaign.advertising_channel_type FROM campaign"
         )
         campaigns: list[CampaignSummary] = []
         try:
@@ -418,23 +447,16 @@ class GoogleAdsService:
             )
             for row in response:
                 campaign = row.campaign
-                # Extract status using .name attribute for enum types
-                status_value = campaign.status.name if hasattr(campaign.status, 'name') else str(campaign.status)
-                logger.debug(
-                    "Campaign %s (ID: %s) - raw status type: %s, has .name: %s, extracted value: %r",
-                    campaign.name,
-                    campaign.id,
-                    type(campaign.status).__name__,
-                    hasattr(campaign.status, 'name'),
-                    status_value,
-                )
+                # Convert protobuf enum to string - the enum value converts directly to the string name
+                status_value = str(campaign.status)
+                advertising_channel_value = str(campaign.advertising_channel_type)
                 campaigns.append(
                     CampaignSummary(
                         campaign_id=str(campaign.id),
                         name=str(campaign.name),
                         customer_id=customer_id,
                         status=status_value,
-                        advertising_channel_type=campaign.advertising_channel_type.name if hasattr(campaign.advertising_channel_type, 'name') else str(campaign.advertising_channel_type),
+                        advertising_channel_type=advertising_channel_value,
                     )
                 )
             logger.info(
