@@ -418,12 +418,22 @@ class GoogleAdsService:
             )
             for row in response:
                 campaign = row.campaign
+                # Extract status using .name attribute for enum types
+                status_value = campaign.status.name if hasattr(campaign.status, 'name') else str(campaign.status)
+                logger.debug(
+                    "Campaign %s (ID: %s) - raw status type: %s, has .name: %s, extracted value: %r",
+                    campaign.name,
+                    campaign.id,
+                    type(campaign.status).__name__,
+                    hasattr(campaign.status, 'name'),
+                    status_value,
+                )
                 campaigns.append(
                     CampaignSummary(
                         campaign_id=str(campaign.id),
                         name=str(campaign.name),
                         customer_id=customer_id,
-                        status=campaign.status.name if hasattr(campaign.status, 'name') else str(campaign.status),
+                        status=status_value,
                         advertising_channel_type=campaign.advertising_channel_type.name if hasattr(campaign.advertising_channel_type, 'name') else str(campaign.advertising_channel_type),
                     )
                 )
