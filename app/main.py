@@ -320,6 +320,8 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
         customer.descriptive_name = descriptive_name
         customer.currency_code = currency_code
         customer.time_zone = time_zone
+        # Store the manager customer ID for this account
+        customer.manager_customer_id = login_customer_id if login_customer_id != customer_id else None
         session.add(customer)
 
         if is_manager and customer_id not in manager_candidates:
@@ -409,9 +411,18 @@ async def list_campaigns(
 
     request.session["selected_customer_id"] = customer_id
 
+    # Find the selected customer record to get its manager ID
+    selected_customer = next((c for c in customers if c.customer_id == customer_id), None)
+    # Use the manager customer ID if this is a client account, otherwise use the account's own ID
+    login_id = (
+        selected_customer.manager_customer_id
+        if selected_customer and selected_customer.manager_customer_id
+        else user.login_customer_id or os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+    )
+
     list_start = time.perf_counter()
     campaigns = service.list_campaigns(
-        customer_id, login_customer_id=user.login_customer_id or os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+        customer_id, login_customer_id=login_id
     )
     logger.info(
         "Fetched %d campaigns for customer %s in %.2fs",
@@ -572,23 +583,31 @@ async def analyze(
         select(Campaign).where(Campaign.campaign_id.in_(campaign_ids))
     ).scalars().all()
     campaigns_by_customer: Dict[str, list[Campaign]] = defaultdict(list)
+    customer_objects: Dict[str, GoogleAdsCustomer] = {}
     for campaign in campaign_records:
         customer = session.get(GoogleAdsCustomer, campaign.customer_id)
         if not customer:
             continue
         campaigns_by_customer[customer.customer_id].append(campaign)
+        customer_objects[customer.customer_id] = customer
 
     landing_page_map: Dict[str, LandingPage] = {}
 
     error_message = None
     try:
-        login_header = user.login_customer_id or os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
         logger.info(
             "Starting analysis loop for %d customer accounts with %d total campaigns",
             len(campaigns_by_customer),
             len(campaign_records),
         )
         for customer_id, campaigns in campaigns_by_customer.items():
+            # Get the appropriate login customer ID for this customer
+            customer_obj = customer_objects.get(customer_id)
+            login_header = (
+                customer_obj.manager_customer_id
+                if customer_obj and customer_obj.manager_customer_id
+                else user.login_customer_id or os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+            )
             ga_campaign_ids = [campaign.campaign_id for campaign in campaigns]
             logger.info(
                 "Processing customer %s with %d campaigns: %s",

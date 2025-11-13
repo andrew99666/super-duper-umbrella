@@ -58,6 +58,7 @@ class GoogleAdsCustomer(TimestampMixin, Base):
     descriptive_name: Mapped[Optional[str]] = mapped_column(String(255))
     currency_code: Mapped[Optional[str]] = mapped_column(String(10))
     time_zone: Mapped[Optional[str]] = mapped_column(String(100))
+    manager_customer_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
     user: Mapped[User] = relationship("User", back_populates="customers")
     campaigns: Mapped[list[Campaign]] = relationship("Campaign", back_populates="customer")
