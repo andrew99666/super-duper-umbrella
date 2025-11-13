@@ -375,6 +375,29 @@ def sync_customers(session: Session, user: User, service: GoogleAdsService) -> N
         session.add(user)
         logger.info("Selected login customer ID %s for user %s", user.login_customer_id, user.id)
 
+    # Second pass: Fix manager_customer_id for client accounts
+    # Client accounts that appeared in the initial accessible list may not have their
+    # manager_customer_id set correctly. We need to identify which accounts are clients
+    # and assign them to the appropriate manager account.
+    if manager_candidates:
+        # Use the first manager account as the login customer for all client accounts
+        primary_manager = manager_candidates[0]
+        all_customers = session.execute(
+            select(GoogleAdsCustomer).where(GoogleAdsCustomer.user_id == user.id)
+        ).scalars().all()
+
+        for customer in all_customers:
+            # If this customer doesn't have a manager_customer_id set and isn't itself a manager,
+            # assign it to the primary manager account
+            if not customer.manager_customer_id and customer.customer_id not in manager_candidates:
+                customer.manager_customer_id = primary_manager
+                session.add(customer)
+                logger.debug(
+                    "Assigned manager %s to client account %s",
+                    primary_manager,
+                    customer.customer_id
+                )
+
     logger.info("Customer sync completed in %.2fs", time.perf_counter() - sync_start)
 
 
